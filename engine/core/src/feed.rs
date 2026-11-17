@@ -11,14 +11,23 @@ use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+// posts per feed request
 const BATCH: usize = 8;
+// the feed stays on one interest for this many posts before picking another
 const STREAK_LENGTH: usize = 5;
+// likes older than the newest this many make up the throwback taste
 const RECENT_WINDOW: usize = 60;
+// throwbacks start once there are this many older likes
 const MIN_THROWBACK_LIKES: usize = 10;
+// a similar: feed drifts towards posts liked while scrolling it, at most this much
 const SIMILAR_DRIFT_MAX: f64 = 0.7;
+// liked posts at which that drift reaches half its max
 const SIMILAR_DRIFT_HALF: f64 = 2.0;
+// a tag to fetch more of is picked at random from the best this many
 const LEAD_CHOICES: usize = 10;
+// artist, character and series tags bigger than this aren't fetched, sorted searches on them time out
 pub const MAX_LEAD_POSTS: i64 = 300_000;
+// the same for general tags, which are broader for their size
 const MAX_GENERAL_LEAD_POSTS: i64 = 20_000;
 
 pub fn lead_limit(kind: Option<TagKind>) -> i64 {
@@ -28,8 +37,11 @@ pub fn lead_limit(kind: Option<TagKind>) -> i64 {
         MAX_GENERAL_LEAD_POSTS
     }
 }
+// neighbouring tags come from the best this many posts for your taste
 const NEIGHBOUR_POSTS: usize = 200;
-const MIN_SESSION_PULL: f64 = 0.3;
+// this visit's tags are fetched once its pull reaches this, about one like
+const MIN_SESSION_PULL: f64 = 0.12;
+// discover mode reorders this many times a batch to find unfamiliar posts
 const DISCOVER_POOL: usize = 8;
 
 #[derive(Clone, Copy)]
@@ -40,6 +52,7 @@ struct Mix {
     explore: usize,
 }
 
+// what one batch is made of, without and with similar: chips
 const MIX: Mix = Mix {
     similar: 0,
     now: 6,

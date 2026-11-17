@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// step size when a tag's learned weight changes
 const LEARNING_RATE: f64 = 0.1;
+// pulls weights of rarely seen tags back towards zero
 const L2: f64 = 0.01;
+// no single tag can push a post up or down more than this
 const MAX_WEIGHT: f64 = 3.0;
+// keeps the learning maths from dividing by zero
 const MIN_SQUARED: f64 = 1e-6;
+// tags with smaller learned weights are ignored when ranking
 pub const MEANINGFUL: f64 = 0.05;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Default)]

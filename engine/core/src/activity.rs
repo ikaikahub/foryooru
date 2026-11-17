@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+// a gap this long without activity ends a visit
 pub const SESSION_GAP_MS: i64 = 30 * 60_000;
+// the most recent events read when rebuilding a visit
 pub const SESSION_EVENTS: usize = 300;
 
 #[derive(Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]

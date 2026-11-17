@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 const BUNDLED: &[u8] = include_bytes!("../../assets/tag_vectors.bin");
+// start of the bundled tag meanings file
 const MAGIC: &[u8] = b"FYTV";
+// tag meanings are stored as bytes, this maps them back to -1..1
 const QUANTIZE_SCALE: f32 = 127.0;
 
 pub struct TagVectors {

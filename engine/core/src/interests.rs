@@ -5,9 +5,13 @@ use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;
 use std::collections::HashSet;
 
+// likes are split into at most this many interests
 const MAX_GROUPS: usize = 8;
+// interests = sqrt(likes / this), so 20 likes make 2, 125 make 5
 const LIKES_PER_GROUP_STEP: f64 = 5.0;
+// clustering stops after this many rounds even if groups are still moving
 const MAX_ROUNDS: usize = 20;
+// fixed so the same likes always give the same groups
 const CLUSTER_SEED: u64 = 0;
 
 #[derive(Clone)]

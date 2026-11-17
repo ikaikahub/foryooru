@@ -13,20 +13,32 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
+// the per-artist cap applies within each page of this many posts
 pub const PAGE_SIZE: usize = 100;
 
 pub type Mask = Vec<bool>;
 
+// post vectors mix exact tag matches with learned tag meanings, this much learned
 const LEARNED_SHARE: f64 = 0.5;
+// above this many stored posts, ranking only scores posts sharing a strong taste tag
 const FULL_SCAN_LIMIT: usize = 200_000;
+// the most taste tags used to find those posts
 const TASTE_TAGS: usize = 32;
+// tags on more posts than this are skipped when finding them, unless they're among the defining tags
 const MAX_TAG_POSTS: usize = 150_000;
+// the strongest this many taste tags are always used, even if common
 const DEFINING_TAGS: usize = 6;
+// tags on more posts than this are never used to find posts
 const MAX_DEFINING_POSTS: usize = 1_500_000;
+// the best this many rough matches get fully scored
 const CANDIDATES: usize = 20_000;
+// random tries per wanted post when sampling a large corpus
 const SAMPLE_TRIES: usize = 200;
+// tags without a bundled meaning get one learned from their posts once they have this many
 const MIN_FOLD_POSTS: usize = 3;
+// posts far from the score range an interest usually likes lose up to this share of their score
 const SCORE_FIT_STRENGTH: f64 = 0.5;
+// that score range is never narrower than this, in percentiles
 const MIN_SCORE_SPREAD: f64 = 0.15;
 
 #[derive(Clone, Copy)]
@@ -126,6 +138,7 @@ pub struct Adjust {
     pub tags: HashMap<i64, f64>,
 }
 
+// the strongest learned tag preferences also used to find posts
 const PREFERRED_TAGS: usize = 4;
 
 thread_local! {

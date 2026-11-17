@@ -4,11 +4,16 @@ use crate::kinds::TagKind;
 use crate::search::Order;
 use rand::Rng;
 
+// Gelbooru refuses pages past this many posts into a search
 pub const GELBOORU_MAX_OFFSET: i64 = 20_000;
+// pages fetched for an artist of a liked post, and for its other tags
 const ARTIST_PAGES: usize = 3;
 const OTHER_PAGES: usize = 1;
+// liking a post fetches more for at most this many of its tags
 const TAGS_PER_POST: usize = 3;
+// taste and neighbour searches per refill, the session's tag comes on top
 const REFILL_SEARCHES: usize = 2;
+// a tag stops being fetched once this share of its posts is stored
 const WELL_FETCHED: f64 = 0.5;
 
 pub struct PostTag {

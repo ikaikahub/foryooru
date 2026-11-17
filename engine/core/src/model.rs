@@ -10,19 +10,30 @@ use crate::tag_vectors;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 
+// step size when the reranking model learns from a view
 const LEARNING_RATE: f64 = 0.15;
+// pulls unused weights back towards zero
 const L2: f64 = 0.0005;
+// how much one view teaches the model: a like or dislike after it, an engaged view, or a long look or quick skip at 1.0
 const REACTION_WEIGHT: f64 = 3.0;
 const ENGAGED_WEIGHT: f64 = 2.0;
+// how much a long look or quick skip teaches the tag preference, by where it happened
 const FEED_LOOK_WEIGHT: f64 = 1.0;
 const VIEWER_LOOK_WEIGHT: f64 = 0.5;
+// a like or dislike this soon before or after a view counts as that view's outcome
 const REACTION_WINDOW_MS: i64 = 120_000;
+// a fresh model starts out copying the current ranking
 const STARTING_TRUST: f64 = 1.0;
+// keep the learning maths from dividing by zero
 const MIN_SQUARED: f64 = 1e-6;
 const MIN_VARIANCE: f64 = 1e-6;
+// accuracy is judged on this many recent views
 const GRADING_WINDOW: usize = 300;
+// the model reorders nothing until it has been graded on this many views
 const MIN_GRADED: usize = 100;
+// the model is fully trusted once its accuracy beats the current ranking's by this much
 const TRUST_MARGIN: f64 = 0.05;
+// artists of this many recent views become features the model learns from
 const RECENT_VIEWS: usize = 20;
 
 #[derive(Clone, Copy)]

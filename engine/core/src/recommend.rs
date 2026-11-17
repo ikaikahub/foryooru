@@ -19,35 +19,63 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
+// how many posts one ranking returns
 pub const RANKING_LIMIT: usize = 2000;
+// posts per artist allowed on one page, so one artist can't fill it
 pub const MAX_PER_ARTIST: usize = 3;
+// the most of the ranking that impressions (looks and skips, not likes) can steer
 pub const IMPRESSION_CAP: f64 = 0.30;
+// how many top posts the learned model reorders; the rest keep the plain ranking's order
 const RERANK_WINDOW: usize = 100;
+// how strongly "similar:-id" chips push away, against 1.0 for the posts searched towards
 const SIMILAR_AWAY: f64 = 0.5;
+// share of each interest replaced by the similar: chips when both are present
 pub const SIMILAR_LEAN: f64 = 0.5;
-const SESSION_MAX: f64 = 0.9;
-const SESSION_PULL_HALF: f64 = 2.0;
+// the most of the ranking that this visit's likes and long looks can take over;
+// a new interest (say a character never liked before) gets at most this share of For you
+const SESSION_PULL_MAX: f64 = 0.5;
+// the most that this visit's skips and dislikes can push the ranking away from them
+const SESSION_PUSH_MAX: f64 = 0.9;
+// session strength at which the pull reaches half its max; a like counts 1.0, a long look 0.5
+const SESSION_PULL_HALF: f64 = 3.0;
+// how close a session post must be to an existing interest to boost it instead of starting a new one
 const SESSION_MATCH: f64 = 0.2;
+// session strength at which the push reaches half its max, low so a single skip already counts
 const SESSION_PUSH_HALF: f64 = 0.25;
+// below this many likes every like is its own interest, above it likes are clustered into groups
 const PER_LIKE_BELOW: usize = 30;
+// how much each kind of session moment counts, against 1.0 for a like
 const LONG_LOOK: f64 = 0.5;
 const ENGAGED: f64 = 0.75;
 const SEARCHED: f64 = 0.75;
 const VIEWER_LONG_LOOK: f64 = 0.35;
 const VIEWER_QUICK_SKIP: f64 = 0.25;
 const QUICK_SKIP: f64 = 0.5;
+// session moments that have faded below this are ignored, along with everything older
 const MIN_RECENCY: f64 = 0.01;
+// clustered interests kept per likes and dislikes combination, so switching searches doesn't recluster
 const GROUP_CACHE_SIZE: usize = 4;
+// a like's weight halves after this many newer likes
 const LIKE_HALF_LIFE: f64 = 300.0;
+// session moments other than likes and searches halve after this many viewed posts
 const SESSION_HALF_LIFE: f64 = 4.0;
+// session likes and searches halve after this many viewed posts
 const LASTING_HALF_LIFE: f64 = 16.0;
-const MOMENTUM: f64 = 3.0;
+// extra pull of the newest like when splitting For you between interests; it counts 1 + MOMENTUM times
+const MOMENTUM: f64 = 1.5;
+// the momentum bonus halves after this many newer likes
 const MOMENTUM_HALF_LIFE: f64 = 10.0;
+// the newest likes join existing groups or start their own instead of being reclustered, so new tastes show up
 const NEWCOMERS: usize = 8;
+// how close a newcomer must be to a group to join it rather than start its own
 const JOIN_CLOSENESS: f64 = 0.35;
+// how strongly dislikes subtract from a taste, against 1.0 for likes
 const DISLIKE_STRENGTH: f64 = 0.5;
+// share of a post's score lost each time it has been shown without a reaction
 pub const SEEN_DROP: f64 = 0.3;
+// with a sort chip, the lowest-sorted post keeps this much of its score and the highest keeps all of it
 const SORT_FLOOR: f64 = 0.3;
+// explore picks are drawn from this many times the posts wanted, preferring unfamiliar series
 const EXPLORE_POOL: usize = 12;
 
 #[derive(Serialize, Deserialize)]
@@ -143,9 +171,9 @@ fn moment_weight(reacted: Reacted) -> f64 {
     }
 }
 
-fn session_share(parts: &[(Vector, f64)], half: f64) -> f64 {
+fn session_share(parts: &[(Vector, f64)], max: f64, half: f64) -> f64 {
     let strength: f64 = parts.iter().map(|(_, weight)| weight).sum();
-    SESSION_MAX * strength / (strength + half)
+    max * strength / (strength + half)
 }
 
 fn searched_vector(corpus: &Corpus, query: &str) -> Option<Vector> {
@@ -195,8 +223,8 @@ pub fn session(corpus: &Corpus, moments: &[Moment]) -> Session {
         weighted_sum(parts.iter().map(|(vector, weight)| (vector, *weight)))
     };
     Session {
-        pull: session_share(&towards, SESSION_PULL_HALF),
-        push: session_share(&away, SESSION_PUSH_HALF),
+        pull: session_share(&towards, SESSION_PULL_MAX, SESSION_PULL_HALF),
+        push: session_share(&away, SESSION_PUSH_MAX, SESSION_PUSH_HALF),
         towards: combined(&towards),
         away: combined(&away),
         parts: towards,

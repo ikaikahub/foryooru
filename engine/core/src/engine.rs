@@ -2,17 +2,26 @@ use std::collections::HashMap;
 
 pub type Vector = HashMap<i64, f64>;
 
+// explore picks start at half of For you and shrink as likes grow, down to a quarter at this many likes
 const EXPLORE_STRENGTH: f64 = 20.0;
+// popular sort: score / (age in days + HOT_AGE_OFFSET_DAYS) ^ HOT_GRAVITY, so newer posts rank higher
 const HOT_GRAVITY: f64 = 1.5;
+// keeps brand new posts from dividing by almost zero
 const HOT_AGE_OFFSET_DAYS: f64 = 2.0;
+// posts without a date are treated as this old
 const UNDATED_AGE_DAYS: f64 = 365.0;
 const DAY_MS: f64 = 86_400_000.0;
+// refill searches go to tags next to your taste at least this often, however many likes you have
 const MIN_DISCOVERY: f64 = 1.0 / 3.0;
+// how much each kind of impression adds to a post's implicit score; opens count at most twice
 const LONG_VIEW: f64 = 0.15;
 const OPEN: f64 = 0.3;
 const QUICK_SKIP: f64 = -0.1;
+// the lowest and highest implicit score one post can reach
 const IMPLICIT_RANGE: (f64, f64) = (-0.3, 0.6);
+// a post's implicit score halves after this many days
 const IMPRESSION_HALF_LIFE_DAYS: f64 = 3.0;
+// impressions reach half of IMPRESSION_CAP once this many posts have them
 const IMPRESSION_SATURATION: f64 = 300.0;
 
 pub fn normalise(vector: Vector) -> Vector {
