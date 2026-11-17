@@ -14,6 +14,7 @@ async function shared<T>(post: Post, action: Promise<T>) {
     return result;
 }
 
+export const openPostLink = async (post: Post) => window.open(postUrl(post.id));
 export const copyPostLink = (post: Post) => shared(post, navigator.clipboard.writeText(postUrl(post.id)));
 export const copyImageLink = (post: Post) => shared(post, navigator.clipboard.writeText(post.fileUrl || postUrl(post.id)));
 export const copyImage = (post: Post) => shared(post, api.copyImage(post.id));
