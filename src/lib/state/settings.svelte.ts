@@ -38,8 +38,6 @@ const RETIRED_SITE = 'kimochii';
 export async function restoreSettings() {
     await saved.restore();
     if ((settings.site as string) === RETIRED_SITE) settings.site = 'gelbooru';
-    // browsers only reach Gelbooru through a proxy, see ApiGroup
-    if (settings.site === 'gelbooru' && !settings.gelbooruProxy.trim()) settings.site = 'danbooru';
 }
 
 export const settingsForEngine = () => $state.snapshot(settings) as Record<string, unknown>;

@@ -85,6 +85,7 @@ export type TablePage = { columns: string[]; rows: (string | number | null)[][];
 
 export type ErrorKind =
     | 'missingApiKey'
+    | 'missingProxy'
     | 'http'
     | 'status'
     | 'rejected'

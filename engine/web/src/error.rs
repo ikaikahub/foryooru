@@ -4,6 +4,8 @@ use serde::{Serialize, Serializer};
 pub enum Error {
     #[error("An API key is needed for Gelbooru")]
     MissingApiKey,
+    #[error("Gelbooru needs a proxy address in Settings")]
+    MissingProxy,
     #[error("Request failed: {0}")]
     Http(#[from] reqwest::Error),
     #[error("The site answered with status {0}")]
@@ -73,6 +75,7 @@ impl Error {
     fn kind(&self) -> &'static str {
         match self {
             Error::MissingApiKey => "missingApiKey",
+            Error::MissingProxy => "missingProxy",
             Error::Http(_) => "http",
             Error::Status(_) => "status",
             Error::Rejected { .. } => "rejected",

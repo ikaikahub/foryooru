@@ -176,6 +176,12 @@ impl Gelbooru {
     }
 
     async fn call(&self, params: &[(&str, String)], logged: Logged<'_>) -> Result<Value> {
+        // browsers can't reach Gelbooru's API directly, see proxy/worker.js
+        let proxy = booru::setting(&self.app, PROXY_SETTING)?;
+        let proxy = proxy.trim().trim_end_matches('/');
+        if proxy.is_empty() {
+            return Err(Error::MissingProxy);
+        }
         let (api_key, user_id) = (
             booru::setting(&self.app, "apiKey")?,
             booru::setting(&self.app, "userId")?,
@@ -191,12 +197,7 @@ impl Gelbooru {
             ("user_id", user_id),
         ];
         all.extend_from_slice(params);
-        let proxy = booru::setting(&self.app, PROXY_SETTING)?;
-        let url = match proxy.trim().trim_end_matches('/') {
-            "" => API_URL.to_owned(),
-            proxy => format!("{proxy}/api"),
-        };
-        self.requester.send(Method::GET, &url, &all, logged).await
+        self.requester.send(Method::GET, &format!("{proxy}/api"), &all, logged).await
     }
 
     pub async fn search(&self, query: &str, page: i64) -> Result<(Vec<RawPost>, i64)> {

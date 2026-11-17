@@ -49,6 +49,14 @@
     library.load();
   });
 
+  // the engine has started and the app is up, so the plain HTML loading screen from app.html can fade away
+  onMount(() => {
+    const splash = document.getElementById('splash');
+    if (!splash) return;
+    splash.classList.add('leaving');
+    setTimeout(() => splash.remove(), 300);
+  });
+
   // a new version replaces the old service worker right away, so reload once onto its files.
   // the very first install also takes control of an uncontrolled page, which is not an update and needs no reload
   onMount(() => {

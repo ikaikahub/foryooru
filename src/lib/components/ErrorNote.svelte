@@ -9,7 +9,7 @@
 {#snippet note()}
   <div class={['flex flex-wrap items-center gap-2 text-sm opacity-80', centered ? 'justify-center' : 'my-2']}>
     <span>{errorMessage(error)}</span>
-    {#if isAppError(error) && error.kind === 'missingApiKey'}
+    {#if isAppError(error) && (error.kind === 'missingApiKey' || error.kind === 'missingProxy')}
       <a class="btn btn-primary btn-xs" href={resolve('/settings')}>Open Settings</a>
     {/if}
   </div>
