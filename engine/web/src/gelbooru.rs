@@ -10,13 +10,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use crate::platform::AppHandle;
 
-const API_URL: &str = "https://gelbooru.com/index.php";
-pub const SITE_URL: &str = "https://gelbooru.com";
 #[cfg(desktop)]
 pub const LOGIN_URL: &str = "https://gelbooru.com/index.php?page=account&s=login&code=00";
 pub const CDN: &str = "https://img4.gelbooru.com";
-// browsers reach Gelbooru through the user's own proxy, see proxy/worker.js
-const PROXY_SETTING: &str = "gelbooruProxy";
+const API_SETTING: &str = "gelbooruApi";
 pub const MAX_OFFSET: i64 = foryooru_core::fetch_plan::GELBOORU_MAX_OFFSET;
 const REQUESTS_PER_SECOND: f64 = 2.0;
 const FAVOURITE_ADDED: &str = "3";
@@ -141,6 +138,7 @@ impl Gelbooru {
             .setting(SESSION_SETTING)
             .and_then(|value| serde_json::from_value(value).ok())
             .ok_or(Error::NeedsGelbooruLogin)?;
+        let relay = booru::setting(&self.app, API_SETTING)?;
         let id = post_id.to_string();
         let logged = Logged {
             endpoint: "favorites",
@@ -152,8 +150,8 @@ impl Gelbooru {
                 .requester
                 .send_with_cookie(
                     Method::GET,
-                    &format!("{SITE_URL}/public/addfav.php"),
-                    &[("id", id.clone())],
+                    &relay,
+                    &[("page", "addfav".to_owned()), ("id", id.clone())],
                     &session.cookie(),
                     logged,
                 )
@@ -169,19 +167,15 @@ impl Gelbooru {
                 ("id", id.clone()),
             ];
             self.requester
-                .send_with_cookie(Method::GET, API_URL, &params, &session.cookie(), logged)
+                .send_with_cookie(Method::GET, &relay, &params, &session.cookie(), logged)
                 .await
                 .map(drop)
         }
     }
 
     async fn call(&self, params: &[(&str, String)], logged: Logged<'_>) -> Result<Value> {
-        // browsers can't reach Gelbooru's API directly, see proxy/worker.js
-        let proxy = booru::setting(&self.app, PROXY_SETTING)?;
-        let proxy = proxy.trim().trim_end_matches('/');
-        if proxy.is_empty() {
-            return Err(Error::MissingProxy);
-        }
+        // browsers can't reach Gelbooru's API directly, the app passes in its relay (see relay/)
+        let relay = booru::setting(&self.app, API_SETTING)?;
         let (api_key, user_id) = (
             booru::setting(&self.app, "apiKey")?,
             booru::setting(&self.app, "userId")?,
@@ -197,7 +191,7 @@ impl Gelbooru {
             ("user_id", user_id),
         ];
         all.extend_from_slice(params);
-        self.requester.send(Method::GET, &format!("{proxy}/api"), &all, logged).await
+        self.requester.send(Method::GET, &relay, &all, logged).await
     }
 
     pub async fn search(&self, query: &str, page: i64) -> Result<(Vec<RawPost>, i64)> {

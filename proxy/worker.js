@@ -1,9 +1,8 @@
-// Gelbooru proxy for the web version of Foryooru, deployed as a Cloudflare Worker.
-// Browsers can't use Gelbooru directly: its API sends no CORS headers and its image servers
-// redirect any request without a gelbooru.com referer. This forwards only those two things,
-// and only for pages on the origins listed in ALLOWED_ORIGINS (wrangler.toml).
+// Gelbooru image proxy for the web version of Foryooru, deployed as a Cloudflare Worker.
+// Gelbooru's image servers redirect any request without a gelbooru.com referer, so this adds one,
+// only for pages on the origins listed in ALLOWED_ORIGINS (wrangler.toml).
+// API calls go through relay/ instead, since Gelbooru answers Cloudflare Workers with 429.
 
-const API = 'https://gelbooru.com/index.php';
 const IMAGE_HOST = /^(img|video-cdn)\d*\.gelbooru\.com$/;
 const REFERER = 'https://gelbooru.com/';
 const IMAGE_CACHE_SECONDS = 60 * 60 * 24 * 30;
@@ -33,11 +32,6 @@ function withCors(response, origin, extra = {}) {
   headers.set('Vary', 'Origin');
   for (const [name, value] of Object.entries(extra)) headers.set(name, value);
   return new Response(response.body, { status: response.status, headers });
-}
-
-async function forwardApi(url) {
-  if (url.searchParams.get('page') !== 'dapi') return new Response('Only the Gelbooru API is proxied', { status: 400 });
-  return fetch(`${API}${url.search}`, { headers: { Referer: REFERER, 'User-Agent': 'foryooru-web' } });
 }
 
 async function forwardImage(url) {
@@ -70,7 +64,6 @@ export default {
     if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
 
     const url = new URL(request.url);
-    if (url.pathname === '/api') return withCors(await forwardApi(url), origin);
     if (url.pathname.startsWith('/img/')) {
       return withCors(await forwardImage(url), origin, { 'Cache-Control': `public, max-age=${IMAGE_CACHE_SECONDS}` });
     }

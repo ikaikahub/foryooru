@@ -2,6 +2,7 @@ import type { GelbooruSession, SaveFolder, Site } from '$lib/api';
 import type { Theme } from '$lib/theme';
 import { sendSettings } from '$lib/engine/client';
 import { persisted } from './persisted.svelte';
+import { GELBOORU_API } from '$lib/sites';
 
 export const MAX_COLUMNS = 10;
 export const DEFAULT_SIDEBAR_WIDTH = 300;
@@ -12,10 +13,7 @@ const saved = persisted('settings.json', {
     apiKey: '',
     userId: '',
     danbooruLogin: '',
-    kimochiiUrl: '',
-    gelbooruProxy: '',
     danbooruApiKey: '',
-    syncFavourites: false,
     gelbooruSession: null as GelbooruSession | null,
     forYouDiscover: false,
     feedDiscover: false,
@@ -38,9 +36,14 @@ const RETIRED_SITE = 'kimochii';
 export async function restoreSettings() {
     await saved.restore();
     if ((settings.site as string) === RETIRED_SITE) settings.site = 'gelbooru';
+    // all tabs share one engine, which serves one site at a time, so a switch in another tab moves this one too
+    const site = settings.site;
+    addEventListener('storage', (event) => {
+        if (event.key === 'settings.json' && settings.site !== site) location.reload();
+    });
 }
 
-export const settingsForEngine = () => $state.snapshot(settings) as Record<string, unknown>;
+export const settingsForEngine = (): Record<string, unknown> => ({ ...$state.snapshot(settings), gelbooruApi: GELBOORU_API });
 
 // the engine reads account keys and the site from its own copy, refreshed on every change
 export function syncSettingsToEngine() {

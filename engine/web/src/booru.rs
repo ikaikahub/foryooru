@@ -6,7 +6,6 @@ use crate::gelbooru::Gelbooru;
 use crate::limiter::Limiter;
 use crate::search::Rating;
 use reqwest::Method;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -136,40 +135,6 @@ impl Requester {
             .await
     }
 
-    pub async fn post_json<B: Serialize, T: DeserializeOwned>(
-        &self,
-        url: &str,
-        body: &B,
-        timeout: Duration,
-        logged: Logged<'_>,
-    ) -> Result<T> {
-        self.logged(logged, async {
-            self.limiter.acquire(None).await;
-            let response = self
-                .http
-                .post(url)
-                .timeout(timeout)
-                .json(body)
-                .send()
-                .await?;
-            let status = response.status().as_u16();
-            if !(200..300).contains(&status) {
-                return Err(Error::Status(status));
-            }
-            Ok(response.json().await?)
-        })
-        .await
-    }
-
-    pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
-        let response = self.http.get(url).timeout(TIMEOUT).send().await?;
-        let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
-            return Err(Error::Status(status));
-        }
-        Ok(response.json().await?)
-    }
-
     async fn logged<T>(
         &self,
         logged: Logged<'_>,
@@ -206,8 +171,9 @@ impl Requester {
                 .request(method.clone(), url)
                 .timeout(TIMEOUT)
                 .query(params);
+            // browsers drop a Cookie header from fetch, so the relay takes the login cookie in its own header
             if let Some(cookie) = cookie {
-                request = request.header(reqwest::header::COOKIE, cookie);
+                request = request.header("X-Gelbooru-Cookie", cookie);
             }
             let result = request.send().await;
             let worth_retrying = match &result {

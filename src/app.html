@@ -24,6 +24,15 @@
         font: 600 1.1rem system-ui, sans-serif;
         transition: opacity 250ms ease-out;
       }
+      #splash.failed .icon {
+        animation: none;
+        opacity: 0.5;
+      }
+      #splash.failed span {
+        max-width: 20rem;
+        text-align: center;
+        font-weight: 400;
+      }
       #splash.leaving {
         opacity: 0;
         pointer-events: none;

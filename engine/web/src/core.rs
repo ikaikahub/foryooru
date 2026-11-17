@@ -5,7 +5,6 @@ use crate::corpus::CorpusCache;
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::import::{self, ImportStatus};
-use crate::kimochii::Kimochii;
 use crate::platform::AppHandle;
 use crate::progress::Progress;
 use crate::queue::{self, FetchQueue};
@@ -19,7 +18,6 @@ pub struct Core {
     pub site: Site,
     pub db: Arc<Db>,
     pub booru: Booru,
-    pub pool: Kimochii,
     pub corpus: Arc<CorpusCache>,
     pub import: Progress<ImportStatus>,
     pub learning: Mutex<()>,
@@ -41,7 +39,6 @@ impl Core {
             app,
             site,
             booru: Booru::new(site, app, db.clone(), http.clone()),
-            pool: Kimochii::new(app, db.clone(), http.clone()),
             db,
             corpus: Arc::new(CorpusCache::default()),
             import: Progress::new(import::EVENT),

@@ -12,6 +12,10 @@ export function persisted<T extends object>(file: string, defaults: T) {
 
     async function restore() {
         Object.assign(state, read(file));
+        // other tabs save their changes too, pick them up so this tab doesn't write its older copy back over them
+        addEventListener('storage', (event) => {
+            if (event.key === file) Object.assign(state, read(file));
+        });
         $effect.root(() => {
             $effect(() => {
                 const json = JSON.stringify($state.snapshot(state));

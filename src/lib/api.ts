@@ -1,7 +1,7 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { exportBackup, importBackup, invoke as callEngine, ready } from '$lib/engine/client';
 import { overwritePersisted, snapshotPersisted } from '$lib/state/persisted.svelte';
-import { settings } from '$lib/state/settings.svelte';
+import { GELBOORU_IMAGES } from '$lib/sites';
 
 export type TagType = 'general' | 'artist' | 'copyright' | 'character' | 'metadata' | 'deprecated';
 export type Tag = { name: string; type: TagType | null; count: number | null };
@@ -39,7 +39,6 @@ export type FeedBatch = { posts: PostDetail[]; exhausted: boolean; broadened: st
 export type SavedSearch = { query: string; tags: Tag[] };
 export type TagList = 'favouriteTags' | 'blacklist';
 export type Site = 'gelbooru' | 'danbooru';
-export type PoolStatus = { version: string; posts: number };
 export type FeedOptions = { hideLiked: boolean; similarPerArtist: number | null; discover: boolean };
 export type Usage = { files: number; bytes: number };
 export type PostFamily = { relation: 'family' | 'similar'; posts: Post[] };
@@ -85,7 +84,6 @@ export type TablePage = { columns: string[]; rows: (string | number | null)[][];
 
 export type ErrorKind =
     | 'missingApiKey'
-    | 'missingProxy'
     | 'http'
     | 'status'
     | 'rejected'
@@ -101,8 +99,7 @@ export type ErrorKind =
     | 'invalidImportFile'
     | 'noDownloadsFolder'
     | 'gallery'
-    | 'unknownTable'
-    | 'missingServer';
+    | 'unknownTable';
 
 export type AppError = { kind: ErrorKind; message: string };
 
@@ -156,7 +153,6 @@ export const api = {
         invoke<AlgorithmOverview>('algorithm_overview', { chips, hideLiked }),
     importFavourites: (user: string) => invoke<void>('import_favourites', { user }),
     setSite: (site: Site) => invoke<void>('set_site', { site }),
-    kimochiiStatus: () => invoke<PoolStatus>('kimochii_status'),
     importFromFile: (name: string, contents: string) => invoke<void>('import_from_file', { name, contents }),
     storageUsage: () => invoke<StorageUsage>('storage_usage'),
     exportData: () => exportData(),
@@ -182,9 +178,8 @@ let lookupTimer: ReturnType<typeof setTimeout> | undefined;
 // Gelbooru's image servers refuse other sites' pages, so its images load through the proxy too.
 // The database keeps the original addresses, so changing the proxy doesn't break stored posts.
 function throughProxy(url: string) {
-    const proxy = settings.gelbooruProxy.trim().replace(/\/+$/, '');
-    if (!proxy || !/^https:\/\/[a-z-]+\d*\.gelbooru\.com\//.test(url)) return url;
-    return `${proxy}/img/${url.slice('https://'.length)}`;
+    if (!/^https:\/\/[a-z-]+\d*\.gelbooru\.com\//.test(url)) return url;
+    return `${GELBOORU_IMAGES}/img/${url.slice('https://'.length)}`;
 }
 
 function remember(value: unknown) {

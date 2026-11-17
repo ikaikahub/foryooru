@@ -61,7 +61,9 @@ class Library {
     async toggleLike(id: number) {
         const state = await api.toggleLike(id, splitQuery(urlQuery(page.url)));
         this.reactions.set(id, state);
-        if (settings.syncFavourites) {
+        // likes also become site favourites whenever the login for that is filled in
+        const canSync = settings.site === 'gelbooru' ? !!settings.gelbooruSession : !!(settings.danbooruLogin && settings.danbooruApiKey);
+        if (canSync) {
             api.setSiteFavourite(id, state.liked).catch((error) =>
                 toast.show(`Couldn't update your ${currentSite().label} favourites: ${errorMessage(error)}`),
             );

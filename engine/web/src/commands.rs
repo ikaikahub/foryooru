@@ -11,7 +11,6 @@ use crate::feed::{self, FeedOptions};
 use crate::fetching;
 use crate::import::{self, ImportStatus};
 use crate::impressions::{self, Impression};
-use crate::kimochii;
 use crate::library::{self, LISTING_PAGE_SIZE, Listing, Matching, PostState, SavedSearch, TagList};
 use crate::model;
 use crate::overview;
@@ -20,7 +19,6 @@ use crate::recommend::{self, RANKING_LIMIT, UserData};
 use crate::search::{self, Rating, Search};
 use crate::storage::{self, StorageUsage};
 use crate::tables::{self, TablePage, TableSize};
-use foryooru_core::protocol::{FeedRequest, ForYouRequest, RankedPost, SimilarRequest, Version};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
@@ -102,38 +100,6 @@ pub struct Ranked {
     explore: bool,
 }
 
-impl From<RankedPost> for Ranked {
-    fn from(post: RankedPost) -> Ranked {
-        Ranked {
-            id: post.id,
-            explore: post.explore,
-        }
-    }
-}
-
-async fn similar_in_pool(
-    core: &Arc<Core>,
-    chips: Vec<String>,
-    per_artist: Option<usize>,
-) -> Result<Vec<i64>> {
-    let pool = kimochii::active(core).ok_or(Error::MissingServer)?;
-    let user = recommend::load_user(&core.db.conn())?;
-    let found = pool
-        .similar(&SimilarRequest {
-            user,
-            chips,
-            per_artist,
-            limit: POOL_SIMILAR,
-        })
-        .await?;
-    kimochii::store(core, found.posts)?;
-    Ok(found.ids)
-}
-
-pub async fn kimochii_status(core: CurrentCore) -> Result<Version> {
-    core.pool.version().await
-}
-
 #[derive(Serialize)]
 pub struct MoreRanked {
     ranked: Vec<Ranked>,
@@ -141,8 +107,6 @@ pub struct MoreRanked {
 }
 
 const MORE_AT_LEAST: usize = 20;
-const POOL_PAGE: usize = 100;
-const POOL_SIMILAR: usize = 500;
 
 pub async fn for_you_more(
     core: CurrentCore,
@@ -152,25 +116,6 @@ pub async fn for_you_more(
     shown: Vec<i64>,
 ) -> Result<MoreRanked> {
     let core = core.inner();
-    if let Some(pool) = kimochii::active(core) {
-        let (user, model) = kimochii::user_and_model(core)?;
-        let found = pool
-            .for_you(&ForYouRequest {
-                user,
-                model,
-                chips,
-                hide_liked,
-                discover,
-                shown,
-                limit: POOL_PAGE,
-            })
-            .await?;
-        kimochii::store(core, found.posts)?;
-        return Ok(MoreRanked {
-            ranked: found.ranked.into_iter().map(Ranked::from).collect(),
-            broadened: None,
-        });
-    }
     let shown: HashSet<i64> = shown.into_iter().collect();
     let model = model::load(&core.db.conn())?;
     let rank = |chips: Vec<String>| {
@@ -228,13 +173,6 @@ pub async fn similar_more(
     shown: Vec<i64>,
 ) -> Result<Vec<i64>> {
     let core = core.inner();
-    if kimochii::active(core).is_some() {
-        let ranked = similar_in_pool(core, chips, per_artist).await?;
-        return Ok(ranked
-            .into_iter()
-            .filter(|id| !shown.contains(id))
-            .collect());
-    }
     let shown: HashSet<i64> = shown.into_iter().collect();
     let rank = || {
         let (chips, shown) = (chips.clone(), shown.clone());
@@ -270,22 +208,6 @@ pub async fn for_you(
     hide_liked: bool,
     discover: bool,
 ) -> Result<Vec<Ranked>> {
-    if let Some(pool) = kimochii::active(&core) {
-        let (user, model) = kimochii::user_and_model(&core)?;
-        let found = pool
-            .for_you(&ForYouRequest {
-                user,
-                model,
-                chips,
-                hide_liked,
-                discover,
-                shown: Vec::new(),
-                limit: POOL_PAGE,
-            })
-            .await?;
-        kimochii::store(core.inner(), found.posts)?;
-        return Ok(found.ranked.into_iter().map(Ranked::from).collect());
-    }
     let search = Search::parse(&chips);
     fetching::for_similar(&core, &search).await;
     let model = model::load(&core.db.conn())?;
@@ -304,9 +226,6 @@ pub async fn similar(
     chips: Vec<String>,
     per_artist: Option<usize>,
 ) -> Result<Vec<i64>> {
-    if kimochii::active(&core).is_some() {
-        return similar_in_pool(core.inner(), chips, per_artist).await;
-    }
     let search = Search::parse(&chips);
     fetching::for_similar(&core, &search).await;
     with_corpus(core.inner(), move |corpus, user| {
@@ -338,27 +257,6 @@ pub async fn feed_next(
     } else {
         Vec::new()
     };
-    if let Some(pool) = kimochii::active(core) {
-        let (user, model) = kimochii::user_and_model(core)?;
-        let found = pool
-            .feed(&FeedRequest {
-                user,
-                model,
-                chips,
-                seen,
-                since,
-                session_likes,
-                options,
-            })
-            .await?;
-        kimochii::store(core, found.posts)?;
-        model::learn_in_background(core.clone());
-        return Ok(FeedBatch {
-            posts: catalogue::post_details(&core.db.conn(), &found.ids)?,
-            exhausted: found.exhausted,
-            broadened: None,
-        });
-    }
     if seen.is_empty() {
         fetching::for_similar(core, &search).await;
     }

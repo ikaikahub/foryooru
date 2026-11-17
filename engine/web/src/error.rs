@@ -4,8 +4,6 @@ use serde::{Serialize, Serializer};
 pub enum Error {
     #[error("An API key is needed for Gelbooru")]
     MissingApiKey,
-    #[error("Gelbooru needs a proxy address in Settings")]
-    MissingProxy,
     #[error("Request failed: {0}")]
     Http(#[from] reqwest::Error),
     #[error("The site answered with status {0}")]
@@ -18,11 +16,9 @@ pub enum Error {
     },
     #[error("Exports only work with Gelbooru")]
     NeedsGelbooru,
-    #[error("Add the Kimochii server address in Settings")]
-    MissingServer,
-    #[error("Log in to Gelbooru in Settings, API settings, to sync favourites")]
+    #[error("Add your Gelbooru API key and login cookie in Settings to sync favourites")]
     NeedsGelbooruLogin,
-    #[error("Gelbooru didn't accept the favourite, try logging in again")]
+    #[error("Gelbooru didn't accept the favourite, check the login cookie in Settings")]
     GelbooruFavouriteRefused,
     #[cfg(desktop)]
     #[error("Couldn't open the Gelbooru login: {0}")]
@@ -75,12 +71,10 @@ impl Error {
     fn kind(&self) -> &'static str {
         match self {
             Error::MissingApiKey => "missingApiKey",
-            Error::MissingProxy => "missingProxy",
             Error::Http(_) => "http",
             Error::Status(_) => "status",
             Error::Rejected { .. } => "rejected",
             Error::NeedsGelbooru => "needsGelbooru",
-            Error::MissingServer => "missingServer",
             Error::NeedsGelbooruLogin => "needsGelbooruLogin",
             Error::GelbooruFavouriteRefused => "gelbooruFavouriteRefused",
             #[cfg(desktop)]

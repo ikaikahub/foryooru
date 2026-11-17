@@ -8,6 +8,11 @@ export const SITES: Record<Site, SiteInfo> = {
     danbooru: { label: 'Danbooru', postUrl: (id) => `https://danbooru.donmai.us/posts/${id}` },
 };
 
+// browsers can't reach Gelbooru directly: its API goes through a Vercel function (relay/ in the repo)
+// and its images through a Cloudflare Worker (proxy/), since Gelbooru blocks the Worker's API calls
+export const GELBOORU_API = 'https://foryooru-relay.vercel.app/api/gelbooru';
+export const GELBOORU_IMAGES = 'https://foryooru-proxy.foryooru.workers.dev';
+
 export const currentSite = () => SITES[settings.site];
 
 export const postUrl = (id: number) => currentSite().postUrl(id);
