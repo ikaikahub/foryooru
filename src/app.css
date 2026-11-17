@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+@plugin "daisyui" {
+  themes: false;
+}
+
+@plugin "daisyui/theme" {
+  name: "dracula";
+  default: true;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: #13152c;
+  --color-base-200: #0e0f21;
+  --color-base-300: #22253f;
+  --color-base-content: #f2f2f7;
+  --color-primary: #f5f3c2;
+  --color-primary-content: #13152c;
+  --color-secondary: #22253f;
+  --color-secondary-content: #ffffff;
+  --color-accent: #f5f3c2;
+  --color-accent-content: #13152c;
+  --color-neutral: #1a1c33;
+  --color-neutral-content: #cfd0da;
+  --color-info: #7eb6ff;
+  --color-info-content: #13152c;
+  --color-success: #8ce99a;
+  --color-success-content: #13152c;
+  --color-warning: #f5d36b;
+  --color-warning-content: #13152c;
+  --color-error: #ff7b7b;
+  --color-error-content: #13152c;
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 0.5px;
+  --depth: 0;
+  --noise: 1;
+}
+
+
+@plugin "daisyui/theme" {
+  name: "bumblebee";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97% 0 0);
+  --color-base-300: oklch(92% 0 0);
+  --color-base-content: oklch(20% 0 0);
+  --color-primary: oklch(85% 0.199 91.936);
+  --color-primary-content: oklch(42% 0.095 57.708);
+  --color-secondary: oklch(75% 0.183 55.934);
+  --color-secondary-content: oklch(40% 0.123 38.172);
+  --color-accent: oklch(0% 0 0);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(37% 0.01 67.558);
+  --color-neutral-content: oklch(92% 0.003 48.717);
+  --color-info: oklch(74% 0.16 232.661);
+  --color-info-content: oklch(39% 0.09 240.876);
+  --color-success: oklch(76% 0.177 163.223);
+  --color-success-content: oklch(37% 0.077 168.94);
+  --color-warning: oklch(82% 0.189 84.429);
+  --color-warning-content: oklch(41% 0.112 45.904);
+  --color-error: oklch(70% 0.191 22.216);
+  --color-error-content: oklch(39% 0.141 25.723);
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 0.5px;
+  --depth: 0;
+  --noise: 1;
+}
+
+@font-face {
+  font-family: Twemoji;
+  src: url("/fonts/twemoji.ttf") format("truetype");
+  font-display: block;
+  unicode-range: U+200D, U+203C, U+2049, U+20E3, U+2139, U+2194-21AA, U+231A-23FF, U+24C2, U+25AA-25B5,
+    U+25B7-25BF, U+25C1-27BF, U+2934-2935, U+2B05-2B55, U+3030, U+303D, U+3297, U+3299, U+FE0F, U+1F000-1FAFF, U+E0020-E007F;
+}
+
+@theme {
+  --font-sans: Twemoji, ui-sans-serif, system-ui, sans-serif;
+  --color-tag-artist: var(--tag-artist);
+  --color-tag-character: var(--tag-character);
+  --color-tag-copyright: var(--tag-copyright);
+  --color-tag-metadata: var(--tag-metadata);
+  --color-tag-deprecated: var(--tag-deprecated);
+  --color-liked: rgb(230 60 100);
+  --color-disliked: rgb(140 140 160);
+}
+
+:root {
+  --tag-artist: #b3261e;
+  --tag-character: #1e8a3a;
+  --tag-copyright: #9c3fb8;
+  --tag-metadata: #c46a00;
+  --tag-deprecated: #888888;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="bumblebee"]) {
+    --tag-artist: #ff7b72;
+    --tag-character: #6fd08c;
+    --tag-copyright: #d59bf0;
+    --tag-metadata: #f0a54a;
+  }
+}
+
+[data-theme="dracula"] {
+  --tag-artist: #ff7b72;
+  --tag-character: #6fd08c;
+  --tag-copyright: #d59bf0;
+  --tag-metadata: #f0a54a;
+}
+
+@layer base {
+  html {
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    scrollbar-gutter: stable;
+  }
+  button, a, nav, header, img, video, .menu, .tabs {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+:is(.btn, .dropdown, .menu li > *, .modal, .modal-box, .toggle, .checkbox, .radio, .select, .tab, .collapse, .toast, .tooltip, .swap),
+:is(.modal, .toggle, .checkbox, .radio, .tooltip)::before,
+:is(.modal, .toggle, .checkbox, .radio, .tooltip)::after,
+::backdrop {
+  transition-duration: 75ms !important;
+  animation-duration: 75ms !important;
+}
+
+@utility page-fill {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - var(--top-bar) - var(--bottom-bar));
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+:is(.input, .textarea, .select):is(:focus, :focus-within) {
+  --input-color: color-mix(in oklab, var(--color-base-content) 50%, #0000);
+  outline: 1px solid var(--input-color);
+  outline-offset: -1px;
+}
+
+[popover]:not(:popover-open) {
+  display: none;
+}
+
+.btn:not(.btn-primary, .btn-ghost, .btn-link, .btn-outline, .btn-error) {
+  --btn-color: var(--color-base-100);
+  --btn-border: var(--color-base-300);
+}
+
+.btn:not(.btn-primary, .btn-ghost, .btn-link, .btn-outline, .btn-error):hover {
+  --btn-border: var(--color-primary);
+}
+
+.fade-in {
+  transition: opacity 150ms ease-out;
+}
+
+.fade-in[data-loading] {
+  opacity: 0;
+}
+
+.zoomable {
+  touch-action: none;
+  transform-origin: 0 0;
+}
+
+@theme {
+  --breakpoint-split: 900px;
+}
+
+:root {
+  --rail-width: 3.5rem;
+  --mobile-bar-height: 3rem;
+  --top-bar: 0px;
+  --bottom-bar: 0px;
+  --page-scrollbar: 0px;
+
+  --z-floating: 20;
+  --z-dropdown: 30;
+  --z-feed: 40;
+  --z-feed-overlay: 41;
+  --z-loading: 42;
+  --z-drawer-backdrop: 43;
+  --z-drawer: 44;
+  --z-sidebar: 45;
+  --z-search: 45;
+  --z-tab-bar: 46;
+  --z-nav-backdrop: 47;
+  --z-nav: 48;
+  --z-viewer: 50;
+  --z-toast: 60;
+  --z-menu-backdrop: 70;
+}
+
+:root[data-layout="drawer"] {
+  --rail-width: 0px;
+  --top-bar: var(--mobile-bar-height);
+  overscroll-behavior-y: none;
+}
+
+:root[data-os="linux"] {
+  --page-scrollbar: 0.75rem;
+}
+
+@keyframes like-burst {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
+  15% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+  30% { transform: translate(-50%, -50%) scale(0.95); }
+  45% { transform: translate(-50%, -50%) scale(1); }
+  75% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -70%) scale(0.8); opacity: 0; }
+}
+
+.like-burst {
+  animation: like-burst 900ms ease-out both;
+}

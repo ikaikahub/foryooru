@@ -1,0 +1,10 @@
+node_modules
+/build
+/.svelte-kit
+/engine/target
+.env
+.env.*
+!.env.example
+vite.config.js.timestamp-*
+/src/lib/engine/pkg
+/proxy/.wrangler

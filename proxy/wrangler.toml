@@ -1,0 +1,7 @@
+name = "foryooru-proxy"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+# only pages on these origins may use the proxy; add the GitHub Pages address once the site is up
+[vars]
+ALLOWED_ORIGINS = "http://localhost:5190"
