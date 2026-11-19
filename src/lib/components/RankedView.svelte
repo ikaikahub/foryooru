@@ -4,6 +4,8 @@
   const kept = new Map<string, Kept>();
 
   export const BATCH = 100;
+  // start the next page while the sentinel is still about a screen below the viewport
+  const LOAD_AHEAD = '0px 0px 1200px 0px';
 </script>
 
 <script lang="ts">
@@ -101,7 +103,7 @@
     {#if all.length}<PostGrid {posts} />{/if}
     {#if canGrow}
       {#key `${loaded}/${all.length}`}
-        <div class="flex items-center justify-center gap-2 py-6 text-sm opacity-60" {@attach onVisible(loadMore)}>
+        <div class="flex items-center justify-center gap-2 py-6 text-sm opacity-60" {@attach onVisible(loadMore, LOAD_AHEAD)}>
           <span class="loading loading-spinner loading-sm"></span>Loading more…
         </div>
       {/key}

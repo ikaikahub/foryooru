@@ -6,19 +6,33 @@ const SEEN_AFTER_MS = 1000;
 export const PRELOAD_AHEAD = 8;
 
 const visibleCallbacks = new WeakMap<Element, () => void>();
-const visibleWatcher = new IntersectionObserver((entries) => {
-    for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        visibleWatcher.unobserve(entry.target);
-        visibleCallbacks.get(entry.target)?.();
-    }
-});
+const visibleWatchers = new Map<string, IntersectionObserver>();
 
-export function onVisible(callback: () => void): Attachment {
+function visibleWatcher(rootMargin: string) {
+    let watcher = visibleWatchers.get(rootMargin);
+    if (!watcher) {
+        const created = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) continue;
+                    created.unobserve(entry.target);
+                    visibleCallbacks.get(entry.target)?.();
+                }
+            },
+            { rootMargin },
+        );
+        visibleWatchers.set(rootMargin, created);
+        watcher = created;
+    }
+    return watcher;
+}
+
+export function onVisible(callback: () => void, rootMargin = '0px'): Attachment {
     return (element) => {
+        const watcher = visibleWatcher(rootMargin);
         visibleCallbacks.set(element, callback);
-        visibleWatcher.observe(element);
-        return () => visibleWatcher.unobserve(element);
+        watcher.observe(element);
+        return () => watcher.unobserve(element);
     };
 }
 
