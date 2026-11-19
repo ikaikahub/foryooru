@@ -4,8 +4,10 @@
   import { splitQuery, urlQuery } from '$lib/state/search.svelte';
 
   const query = $derived(urlQuery(page.url));
+  const initialPost = $derived(Number(page.url.searchParams.get('post')) || null);
+  const initialSite = $derived(page.url.searchParams.get('site'));
 </script>
 
 {#key query}
-  <Feed chips={splitQuery(query)} />
+  <Feed chips={splitQuery(query)} {initialPost} {initialSite} />
 {/key}

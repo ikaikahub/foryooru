@@ -5,11 +5,13 @@
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { api, errorMessage, type FeedOptions, type PostDetail } from '$lib/api';
   import { PRELOAD_AHEAD, touchDrag } from '$lib/attachments';
   import { addImpression, flushImpressions } from '$lib/impressions';
   import { isShortcut } from '$lib/keys';
+  import { hrefWith } from '$lib/navigation';
   import { signal, flushSignals } from '$lib/signals';
   import { library } from '$lib/state/library.svelte';
   import { FLICK_SPEED, SPRING, swipeAxis, swipeSpeed, trackMove, type Moves } from '$lib/motion';
@@ -33,7 +35,11 @@
   import SidePanels from '../sidebar/SidePanels.svelte';
   import FeedItem from './FeedItem.svelte';
 
-  let { chips }: { chips: string[] } = $props();
+  let {
+    chips,
+    initialPost = null,
+    initialSite = null,
+  }: { chips: string[]; initialPost?: number | null; initialSite?: string | null } = $props();
 
   const CURRENT_AT = 0.6;
   const SETTLED_AT = 0.95;
@@ -70,7 +76,7 @@
     state: (name) => staged.state(name),
     add: (tag, type) => staged.add(tag, type),
     remove: (name) => staged.remove(name),
-    searchHref: (name) => searchHref('/feed', staged.ratingQuery(name)),
+    searchHref: (name) => searchHref('/tiktok', staged.ratingQuery(name)),
   };
 
   async function loadNext() {
@@ -89,6 +95,7 @@
           if (fetchChips === chips) toast.show('Showing broader results…');
           fetchChips = batch.broadened;
         }
+        updateLink();
       }
     } catch (caught) {
       if (requested === options) error = caught;
@@ -96,6 +103,38 @@
       loading = false;
     }
     if (requested !== options) loadNext();
+  }
+
+  function updateLink() {
+    const post = posts[current];
+    if (post) replaceState(hrefWith(page.url, { site: settings.site, post: post.id }), page.state);
+  }
+
+  async function startAt(id: number) {
+    const existing = posts.findIndex((post) => post.id === id);
+    if (existing !== -1) {
+      current = existing;
+      await tick();
+      scrollToIndex(existing);
+      updateLink();
+      return;
+    }
+    try {
+      const post = await api.openPost(id);
+      library.remember([post]);
+      posts = [post];
+      current = 0;
+      exhausted = false;
+      error = null;
+      updateLink();
+      await tick();
+      scrollToIndex(0);
+      loadNext();
+    } catch (caught) {
+      toast.show(`Couldn't open that post: ${errorMessage(caught)}`);
+      if (saved) tick().then(() => scrollToIndex(current));
+      else loadNext();
+    }
   }
 
   $effect(() => {
@@ -161,6 +200,7 @@
       signal(posts[index].id, 'scrollBack');
     }
     current = index;
+    updateLink();
     settled = false;
     if (posts.length - index <= LOAD_WHEN_LEFT) loadNext();
   }
@@ -230,8 +270,16 @@
   });
 
   onMount(() => {
-    if (saved) tick().then(() => scrollToIndex(current));
-    else loadNext();
+    if (initialPost !== null && (initialSite === null || initialSite === settings.site)) {
+      void startAt(initialPost);
+    } else if (saved) {
+      tick().then(() => {
+        scrollToIndex(current);
+        updateLink();
+      });
+    } else {
+      loadNext();
+    }
     return () => {
       recordDwell();
       flushImpressions();

@@ -2,7 +2,7 @@ import { goto, pushState, replaceState } from '$app/navigation';
 import { page } from '$app/state';
 import { api, errorMessage, type Site } from '$lib/api';
 import { addImpression } from '$lib/impressions';
-import { goBack, hrefWith } from '$lib/navigation';
+import { appPath, goBack, hrefWith } from '$lib/navigation';
 import { library } from '$lib/state/library.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { toast } from '$lib/state/toast.svelte';
@@ -151,6 +151,8 @@ export async function openLinkedPost() {
     await api.waitUntilReady();
     const linked = page.url.searchParams.get('site');
     const site = linked !== null && Object.hasOwn(SITES, linked) ? (linked as Site) : settings.site;
+    // the TikTok feed moves itself to a post instead of opening it in the viewer
+    if (appPath() === '/tiktok' && site === settings.site) return;
     // the post of the other site is only read from its api, this site's database stays untouched
     if (site !== settings.site) {
         viewer.openLinked(id, site);

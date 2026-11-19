@@ -29,7 +29,7 @@
   if (linuxDesktop) document.documentElement.dataset.os = 'linux';
 
   const query = $derived(urlQuery(page.url));
-  const fullScreen = $derived(appPath() === '/feed');
+  const fullScreen = $derived(appPath() === '/tiktok');
 
   $effect(() => applyTheme(settings.theme));
   $effect(() => {

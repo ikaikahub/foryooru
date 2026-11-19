@@ -7,6 +7,6 @@ export const DISCOVER_KEYS = {
 
 export function algorithmPageFor(path: string): AlgorithmPage | null {
     if (path === '/for-you') return 'forYou';
-    if (path === '/feed') return 'feed';
+    if (path === '/tiktok') return 'feed';
     return null;
 }
