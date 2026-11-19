@@ -102,11 +102,12 @@ class Viewer {
         this.closing = true;
         try {
             if (fromUrl) {
-                // there is no list behind a shared link, so just drop the post from the address
+                // there is no list behind a shared link, so closing adds the plain page instead of going back.
+                // the link keeps its own entry, so back returns to the post
                 const target = new URL(page.url);
                 target.searchParams.delete('post');
                 target.searchParams.delete('site');
-                replaceState(target.pathname + target.search, {});
+                pushState(target.pathname + target.search, {});
                 return;
             }
             const steps = turned ? depth - 1 : depth;

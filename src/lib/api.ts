@@ -193,9 +193,12 @@ function remember(value: unknown, site: Site = settings.site) {
     } else if (value && typeof value === 'object') {
         const post = value as Partial<Post>;
         if (typeof post.id === 'number' && typeof post.fileUrl === 'string') {
+            // Gelbooru gives videos and gifs no sample, so their still is the thumbnail rather than the media file
+            const moving = post.media === 'video' || post.media === 'gif';
+            const sample = moving ? post.previewUrl || post.fileUrl : post.sampleUrl || post.fileUrl;
             known.set(mediaKey(site, post.id), {
                 thumbnail: throughProxy(post.previewUrl || post.sampleUrl || post.fileUrl),
-                sample: throughProxy(post.sampleUrl || post.fileUrl),
+                sample: throughProxy(sample),
                 original: throughProxy(post.fileUrl),
             });
         }
