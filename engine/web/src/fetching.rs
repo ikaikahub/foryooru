@@ -1,4 +1,4 @@
-use crate::booru::{Order, PAGE_SIZE, SiteQuery};
+use crate::booru::{Order, PAGE_SIZE, POPULAR_WINDOW, SiteQuery};
 use crate::catalogue::{self, DAY_MS, TagKind};
 use crate::core::Core;
 use crate::error::Result;
@@ -125,9 +125,6 @@ pub fn after_long_looks(core: &Arc<Core>, posts: Vec<i64>, chips: Vec<String>) {
         Ok(())
     });
 }
-
-// the popular seed takes the best-scored posts out of this many of the newest ids
-const POPULAR_WINDOW: i64 = 1000;
 
 fn popular_seeded(core: &Core) -> Result<bool> {
     let count: i64 = core.db.conn().query_row(

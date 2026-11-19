@@ -15,6 +15,8 @@ use crate::platform::AppHandle;
 
 pub const SETTINGS_STORE: &str = "settings.json";
 pub const PAGE_SIZE: i64 = 100;
+// Gelbooru's popular sort is the best posts from this many of the newest ids
+pub const POPULAR_WINDOW: i64 = 1000;
 const TIMEOUT: Duration = Duration::from_secs(15);
 const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(5), Duration::from_secs(20)];
 const RETRY_STATUSES: [u16; 4] = [429, 502, 503, 504];
@@ -288,6 +290,19 @@ impl Booru {
             (Booru::Danbooru(_), Some(Order::Random)) => Some("order:random"),
         };
         words.extend(order.map(str::to_owned));
+        if let Booru::Gelbooru(gelbooru) = self
+            && query.tags.is_empty()
+        {
+            // a bare sort:score is slow through Gelbooru's api, but id:>0 returns the same posts quickly
+            match query.order {
+                Some(Order::Score) => words.push("id:>0".into()),
+                Some(Order::Popular) => {
+                    let newest = gelbooru.latest_id().await?;
+                    words.push(format!("id:>{}", (newest - POPULAR_WINDOW).max(0)));
+                }
+                _ => {}
+            }
+        }
         words.dedup();
         Ok(words.join(" "))
     }

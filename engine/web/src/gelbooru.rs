@@ -7,7 +7,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use crate::platform::AppHandle;
 
 #[cfg(desktop)]
@@ -117,6 +117,7 @@ struct RawTag {
 pub struct Gelbooru {
     app: AppHandle,
     requester: Requester,
+    latest: Mutex<Option<i64>>,
 }
 
 impl Gelbooru {
@@ -129,7 +130,40 @@ impl Gelbooru {
                 http,
                 Limiter::new(REQUESTS_PER_SECOND, 5.0),
             ),
+            latest: Mutex::new(None),
         }
+    }
+
+    // cached for the session so paging through a popular search keeps the same id window
+    pub async fn latest_id(&self) -> Result<i64> {
+        if let Some(id) = *self.latest.lock().unwrap() {
+            return Ok(id);
+        }
+        let body = self
+            .call(
+                &[
+                    ("s", "post".into()),
+                    ("tags", String::new()),
+                    ("pid", "0".into()),
+                    ("limit", "1".into()),
+                ],
+                Logged {
+                    endpoint: "latest",
+                    query: "id",
+                    page: None,
+                },
+            )
+            .await?;
+        let posts: Vec<GelbooruPost> = match body.get("post") {
+            Some(posts) => serde_json::from_value(posts.clone())?,
+            None => Vec::new(),
+        };
+        let id = posts
+            .first()
+            .map(|post| post.id)
+            .ok_or(Error::PostNotFound)?;
+        *self.latest.lock().unwrap() = Some(id);
+        Ok(id)
     }
 
     pub async fn set_favourite(&self, post_id: i64, favourite: bool) -> Result<()> {
