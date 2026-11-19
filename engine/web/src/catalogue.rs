@@ -160,11 +160,23 @@ pub fn is_partial(conn: &Connection, id: i64) -> Result<bool> {
         .unwrap_or(false))
 }
 
-// posts from the other site are only shown, so their details skip the database
-pub fn detail_from_raw(raw: RawPost) -> PostDetail {
+// posts from the other site are read-only, but their tags are looked up and filled in this site's tag table
+pub fn detail_from_raw(conn: &Connection, raw: RawPost) -> Result<PostDetail> {
+    let mut lookup = conn.prepare_cached("SELECT type, site_count FROM tags WHERE name = ?1")?;
+    let mut tags = Vec::with_capacity(raw.tags.len());
+    for name in &raw.tags {
+        let info: Option<(Option<i64>, Option<i64>)> = lookup
+            .query_row([name], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional()?;
+        tags.push(Tag {
+            name: name.clone(),
+            kind: info.and_then(|(kind, _)| kind).and_then(TagKind::from_code),
+            count: info.and_then(|(_, count)| count),
+        });
+    }
     let media = media_of(&raw.file_url);
     let file_ext = extension(&raw.file_url).to_uppercase();
-    PostDetail {
+    Ok(PostDetail {
         post: Post {
             id: raw.id,
             rating: raw.rating.name().to_owned(),
@@ -182,20 +194,54 @@ pub fn detail_from_raw(raw: RawPost) -> PostDetail {
             liked: false,
             disliked: false,
         },
-        tag_groups: vec![TagGroup {
-            label: "Tags",
-            tags: raw
-                .tags
-                .into_iter()
-                .map(|name| Tag {
-                    name,
-                    kind: None,
-                    count: None,
-                })
-                .collect(),
-        }],
+        tag_groups: group_tags(tags),
         blocked_by: Vec::new(),
+    })
+}
+
+pub fn ensure_tags(conn: &Connection, names: &[String]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut insert = tx.prepare_cached("INSERT OR IGNORE INTO tags (name) VALUES (?1)")?;
+        for name in names {
+            insert.execute([name])?;
+        }
     }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn tags_without_details(conn: &Connection, names: &[String]) -> Result<Vec<String>> {
+    let mut statement = conn.prepare_cached("SELECT details_fetched FROM tags WHERE name = ?1")?;
+    let mut missing = Vec::new();
+    for name in names {
+        let fetched: Option<i64> = statement.query_row([name], |row| row.get(0)).optional()?;
+        if fetched != Some(1) {
+            missing.push(name.clone());
+        }
+    }
+    Ok(missing)
+}
+
+pub async fn fill_tag_details_named(core: &Core, names: &[String]) -> Result<()> {
+    for chunk in names.chunks(TAG_BATCH) {
+        let details = core.booru.tag_details(chunk).await?;
+        let mut conn = core.db.conn();
+        let tx = conn.transaction()?;
+        {
+            let mut update = tx.prepare_cached(
+                "UPDATE tags SET type = ?2, site_count = ?3, details_fetched = 1 WHERE name = ?1",
+            )?;
+            for name in chunk {
+                let (kind, count) = details.get(name).map_or((None, None), |detail| {
+                    (Some(detail.kind), Some(detail.count))
+                });
+                update.execute(params![name, kind, count])?;
+            }
+        }
+        tx.commit()?;
+    }
+    Ok(())
 }
 
 pub struct Stored {

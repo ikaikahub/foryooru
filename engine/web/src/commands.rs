@@ -378,10 +378,23 @@ pub async fn open_post(core: CurrentCore, id: i64) -> Result<PostDetail> {
     post_detail(core, id).await
 }
 
-// a shared link to the other site's post is shown as-is, without touching this site's database
+// a shared link to the other site's post is shown read-only, but its tags are filled into this site's tag table
 pub async fn preview_post(core: CurrentCore, site: Site, id: i64) -> Result<PostDetail> {
     let booru = Booru::new(site, core.app, core.db.clone(), sites::http()?);
-    Ok(catalogue::detail_from_raw(booru.preview(id).await?))
+    let raw = booru.preview(id).await?;
+    let names = raw.tags.clone();
+    let missing = {
+        let conn = core.db.conn();
+        catalogue::ensure_tags(&conn, &names)?;
+        catalogue::tags_without_details(&conn, &names)?
+    };
+    if !missing.is_empty()
+        && let Err(error) = catalogue::fill_tag_details_named(core.inner(), &missing).await
+    {
+        crate::platform::log(&format!("Filling shared post tags failed: {error}"));
+    }
+    let conn = core.db.conn();
+    catalogue::detail_from_raw(&conn, raw)
 }
 
 pub fn toggle_like(core: CurrentCore, id: i64, chips: Vec<String>) -> Result<PostState> {
