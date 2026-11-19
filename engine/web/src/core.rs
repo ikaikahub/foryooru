@@ -11,6 +11,7 @@ use crate::queue::{self, FetchQueue};
 use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil};
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 pub struct Core {
@@ -22,6 +23,7 @@ pub struct Core {
     pub import: Progress<ImportStatus>,
     pub learning: Mutex<()>,
     pub queue: Arc<FetchQueue>,
+    pub popular_seeding: AtomicBool,
 }
 
 impl Drop for Core {
@@ -44,6 +46,7 @@ impl Core {
             import: Progress::new(import::EVENT),
             learning: Mutex::new(()),
             queue: Arc::new(FetchQueue::default()),
+            popular_seeding: AtomicBool::new(false),
         });
         queue::start(&core);
         catalogue::fill_tag_details(&core);

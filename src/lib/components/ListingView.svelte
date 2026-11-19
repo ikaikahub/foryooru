@@ -48,14 +48,17 @@
   });
 </script>
 
-{#if loader.loading}<LoadingBar text={loadingText} />{/if}
-{#if loader.error}<ErrorNote error={loader.error} centered={!listing} />{/if}
-{#if listing}
-  {#if note}<p class="mb-1 text-xs opacity-70">{note}</p>{/if}
-  {#if listing.posts.length}
-    <PostGrid posts={listing.posts} {pageTurner} {trackSeen} />
-  {:else if !loader.error}
-    <EmptyState message={emptyMessage} />
+{#if loader.error}
+  <ErrorNote error={loader.error} centered />
+{:else}
+  {#if loader.loading}<LoadingBar text={loadingText} />{/if}
+  {#if listing}
+    {#if note}<p class="mb-1 text-xs opacity-70">{note}</p>{/if}
+    {#if listing.posts.length}
+      <PostGrid posts={listing.posts} {pageTurner} {trackSeen} />
+    {:else}
+      <EmptyState message={emptyMessage} />
+    {/if}
+    <Pager {current} pages={listing.pages} {href} />
   {/if}
-  <Pager {current} pages={listing.pages} {href} />
 {/if}

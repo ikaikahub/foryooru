@@ -162,10 +162,16 @@ const MIGRATIONS: &[&str] = &["
         query TEXT NOT NULL
     );
     CREATE INDEX searches_by_time ON searches (at);
+", "
+    CREATE TABLE meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
 "];
 
 pub const TABLES: &[&str] = &[
     "model_state",
+    "meta",
     "searches",
     "signals",
     "activity",

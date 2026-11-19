@@ -72,6 +72,7 @@ pub async fn browse(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<
     let search = Search::parse(&chips);
     let query = core.booru.render(&search.site_query(&blacklist)).await?;
     let stored = catalogue::search_page(core, &query, page, SEARCH_PAGE_MAX_AGE).await?;
+    fetching::seed_popular(core);
     let conn = core.db.conn();
     let (kept, hidden) = library::without_blacklisted(&conn, stored.ids)?;
     let mut posts = catalogue::posts(&conn, &kept)?;

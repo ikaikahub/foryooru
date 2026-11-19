@@ -93,19 +93,22 @@
   }
 </script>
 
-{#if loader.loading}<LoadingBar text={loadingText} />{/if}
-{#if loader.error}<ErrorNote error={loader.error} centered={!ids} />{/if}
-{#if all}
-  {#if all.length}<PostGrid {posts} />{/if}
-  {#if canGrow}
-    {#key `${loaded}/${all.length}`}
-      <div class="flex items-center justify-center gap-2 py-6 text-sm opacity-60" {@attach onVisible(loadMore)}>
-        <span class="loading loading-spinner loading-sm"></span>Loading more…
-      </div>
-    {/key}
-  {:else if all.length}
-    <p class="py-6 text-center text-sm opacity-60">{endMessage}</p>
-  {:else}
-    <EmptyState message={emptyMessage} />
+{#if loader.error}
+  <ErrorNote error={loader.error} centered />
+{:else}
+  {#if loader.loading}<LoadingBar text={loadingText} />{/if}
+  {#if all}
+    {#if all.length}<PostGrid {posts} />{/if}
+    {#if canGrow}
+      {#key `${loaded}/${all.length}`}
+        <div class="flex items-center justify-center gap-2 py-6 text-sm opacity-60" {@attach onVisible(loadMore)}>
+          <span class="loading loading-spinner loading-sm"></span>Loading more…
+        </div>
+      {/key}
+    {:else if all.length}
+      <p class="py-6 text-center text-sm opacity-60">{endMessage}</p>
+    {:else}
+      <EmptyState message={emptyMessage} />
+    {/if}
   {/if}
 {/if}

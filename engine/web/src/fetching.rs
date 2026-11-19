@@ -9,6 +9,7 @@ use crate::search::{Ratings, Search};
 use foryooru_core::fetch_plan::{self, PostTag};
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 pub const STORED_FOR: i64 = 30 * DAY_MS;
 const RANDOM_STORED_FOR: i64 = DAY_MS;
@@ -122,6 +123,62 @@ pub fn after_long_looks(core: &Arc<Core>, posts: Vec<i64>, chips: Vec<String>) {
             }
         }
         Ok(())
+    });
+}
+
+// the popular seed takes the best-scored posts out of this many of the newest ids
+const POPULAR_WINDOW: i64 = 1000;
+
+fn popular_seeded(core: &Core) -> Result<bool> {
+    let count: i64 = core.db.conn().query_row(
+        "SELECT COUNT(*) FROM meta WHERE key = 'popular_seeded'",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+fn mark_popular_seeded(core: &Core, floor: i64) -> Result<()> {
+    core.db.conn().execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('popular_seeded', ?1)",
+        [floor.to_string()],
+    )?;
+    Ok(())
+}
+
+// one page of the latest 1000 posts sorted by score across every rating, once per database
+pub fn seed_popular(core: &Arc<Core>) {
+    let core = core.clone();
+    spawn("popular seed", async move {
+        if popular_seeded(&core)? {
+            return Ok(());
+        }
+        if core.popular_seeding.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let result: Result<()> = async {
+            let newest: Option<i64> = core
+                .db
+                .conn()
+                .query_row("SELECT MAX(id) FROM posts", [], |row| row.get(0))?;
+            let Some(newest) = newest else {
+                return Ok(());
+            };
+            let floor = (newest - POPULAR_WINDOW).max(0);
+            let query = site_query(
+                &core,
+                vec![format!("id:>{floor}")],
+                Ratings::ALL,
+                Some(Order::Score),
+            )
+            .await?;
+            catalogue::fetch_page(&core, &query, 0, ALWAYS_FETCH).await?;
+            mark_popular_seeded(&core, floor)?;
+            Ok(())
+        }
+        .await;
+        core.popular_seeding.store(false, Ordering::SeqCst);
+        result
     });
 }
 
@@ -241,12 +298,14 @@ async fn refill_jobs(core: &Core, chips: &[String], leads: Leads) -> Result<Vec<
 }
 
 pub async fn fetch_more_now(core: &Arc<Core>, chips: &[String], leads: Leads) -> Result<()> {
+    seed_popular(core);
     let jobs = refill_jobs(core, chips, leads).await?;
     core.queue.run_now(jobs).await;
     Ok(())
 }
 
 pub fn after_batch(core: &Arc<Core>, chips: Vec<String>, leads: Leads) {
+    seed_popular(core);
     if core.queue.has(Priority::Refill) {
         return;
     }

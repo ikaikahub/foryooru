@@ -34,12 +34,17 @@ function withCors(response, origin, extra = {}) {
   return new Response(response.body, { status: response.status, headers });
 }
 
-async function forwardImage(url) {
+async function forwardImage(request, url) {
   // /img/<host>/<path on that host>
   const [, , host, ...rest] = url.pathname.split('/');
   if (!IMAGE_HOST.test(host ?? '')) return new Response('Not a Gelbooru image host', { status: 400 });
+  const headers = { Referer: REFERER };
+  // video players ask for byte ranges, and dropping the header makes the origin return the whole file
+  const range = request.headers.get('Range');
+  if (range) headers.Range = range;
   return fetch(`https://${host}/${rest.join('/')}`, {
-    headers: { Referer: REFERER },
+    method: request.method,
+    headers,
     // Cloudflare keeps images at its edge, so repeat views don't reach Gelbooru again
     cf: { cacheTtl: IMAGE_CACHE_SECONDS, cacheEverything: true },
   });
@@ -65,7 +70,7 @@ export default {
 
     const url = new URL(request.url);
     if (url.pathname.startsWith('/img/')) {
-      return withCors(await forwardImage(url), origin, { 'Cache-Control': `public, max-age=${IMAGE_CACHE_SECONDS}` });
+      return withCors(await forwardImage(request, url), origin, { 'Cache-Control': `public, max-age=${IMAGE_CACHE_SECONDS}` });
     }
     return new Response('Not found', { status: 404 });
   },

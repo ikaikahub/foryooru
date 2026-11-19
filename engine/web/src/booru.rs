@@ -114,6 +114,14 @@ impl Requester {
     ) -> Result<Value> {
         self.logged(logged, async {
             let text = self.request(method, url, params, None).await?;
+            // Gelbooru answers an over-deep page with a 200 and this body instead of json
+            if text.trim_start().starts_with("Too deep") {
+                return Err(Error::Rejected {
+                    site: self.site.name(),
+                    status: 200,
+                    message: "That page is too deep. Try a narrower search.".into(),
+                });
+            }
             Ok(if text.trim().is_empty() {
                 Value::Null
             } else {
