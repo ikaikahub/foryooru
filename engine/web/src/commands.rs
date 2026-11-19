@@ -16,6 +16,7 @@ use crate::recommend::{self, RANKING_LIMIT, UserData};
 use crate::search::{self, Rating, Search};
 use crate::storage::{self, StorageUsage};
 use crate::tables::{self, TablePage, TableSize};
+use crate::timing;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
@@ -46,7 +47,9 @@ impl Deref for CurrentCore {
 
 // the engine already runs on a Web Worker, so ranking work runs inline instead of on a blocking pool
 async fn with_corpus<T>(core: &Arc<Core>, work: impl FnOnce(&Corpus, &UserData) -> T) -> Result<T> {
+    let started = timing::now();
     let corpus = core.corpus.get(&core.db)?;
+    timing::record("corpus", started.elapsed(), "");
     let user = recommend::load_user(&core.db.conn())?;
     Ok(work(&corpus, &user))
 }

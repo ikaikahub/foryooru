@@ -173,6 +173,10 @@ impl Requester {
         params: &[(&str, String)],
         cookie: Option<&str>,
     ) -> Result<String> {
+        let note = params
+            .iter()
+            .find(|(name, _)| *name == "tags")
+            .map_or_else(String::new, |(_, value)| value.clone());
         let mut delays = RETRY_DELAYS.iter();
         loop {
             self.limiter.acquire(None).await;
@@ -185,7 +189,9 @@ impl Requester {
             if let Some(cookie) = cookie {
                 request = request.header("X-Gelbooru-Cookie", cookie);
             }
+            let started = crate::timing::now();
             let result = request.send().await;
+            crate::timing::record("http", started.elapsed(), note.as_str());
             let worth_retrying = match &result {
                 Ok(response) => RETRY_STATUSES.contains(&response.status().as_u16()),
                 Err(error) => error.is_request() || error.is_timeout(),
@@ -196,7 +202,9 @@ impl Requester {
             }
             let response = result?;
             let status = response.status().as_u16();
+            let started = crate::timing::now();
             let text = response.text().await?;
+            crate::timing::record("body", started.elapsed(), note.as_str());
             if !(200..300).contains(&status) {
                 let message = serde_json::from_str::<Value>(&text).ok().and_then(|body| {
                     body.get("message")

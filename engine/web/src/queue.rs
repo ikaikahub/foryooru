@@ -128,6 +128,11 @@ async fn next_job(queue: &FetchQueue, core: &Weak<Core>) -> Option<Queued> {
 }
 
 async fn run(core: &Arc<Core>, job: &Job) -> Result<()> {
+    let note = match job {
+        Job::Page { lead, .. } => lead.clone().unwrap_or_else(|| "page".to_string()),
+        Job::TagDetails => "tag details".to_string(),
+    };
+    let _measured = crate::timing::measure("job", note);
     match job {
         Job::Page {
             query,

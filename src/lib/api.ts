@@ -45,6 +45,7 @@ export type Usage = { files: number; bytes: number };
 export type PostFamily = { relation: 'family' | 'similar'; posts: Post[] };
 export type Signal = 'scrollBack' | 'videoLooped' | 'info' | 'shared' | 'tag' | 'similar' | 'opened';
 export type StorageUsage = { database: Usage; settings: Usage; cache: Usage; cacheLimitMb: number };
+export type TimingSpan = { at: number; name: string; ms: number; note: string };
 
 export type ImportStatus = {
     running: boolean;
@@ -145,6 +146,7 @@ export const api = {
     setSite: (site: Site) => invoke<void>('set_site', { site }),
     importFromFile: (name: string, contents: string) => invoke<void>('import_from_file', { name, contents }),
     storageUsage: () => invoke<StorageUsage>('storage_usage'),
+    timings: () => invoke<TimingSpan[]>('timings'),
     exportData: () => exportData(),
     importData: () => importData(),
     resetDatabase: () => invoke<void>('reset_database'),

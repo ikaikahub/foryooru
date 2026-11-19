@@ -27,6 +27,7 @@ const saved = persisted('settings.json', {
     columns: 0,
     gridAutoplay: false,
     saveFolder: null as SaveFolder | null,
+    debug: false,
 });
 
 export const settings = saved.state;

@@ -15,6 +15,7 @@
   import AlgorithmGroup from './AlgorithmGroup.svelte';
   import AppearanceGroup from './AppearanceGroup.svelte';
   import BlacklistPanel from './BlacklistPanel.svelte';
+  import DebugGroup from './DebugGroup.svelte';
   import GroupColumns from '../GroupColumns.svelte';
   import LoadingBar from '../LoadingBar.svelte';
   import SettingsGroup from '../SettingsGroup.svelte';
@@ -117,6 +118,8 @@
     <SettingsRow icon="📜" label="View activity" onclick={() => goto(resolve('/activity'))} />
     <SettingsRow icon="🗃️" label="Database info" onclick={() => goto(resolve('/database'))} />
   </SettingsGroup>
+
+  <DebugGroup />
 
   <AppearanceGroup />
 

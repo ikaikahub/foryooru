@@ -144,6 +144,7 @@ impl CorpusCache {
             self.stale.store(false, Ordering::SeqCst);
             let (cache, db) = (self.clone(), db.clone());
             crate::platform::spawn(async move {
+                let started = crate::timing::now();
                 match db.connect().and_then(|conn| build(&conn)) {
                     Ok(fresh) => {
                         *cache
@@ -153,6 +154,7 @@ impl CorpusCache {
                     }
                     Err(error) => eprintln!("Rebuilding the post index failed: {error}"),
                 }
+                crate::timing::record("corpus.rebuild", started.elapsed(), "");
                 cache.rebuilding.store(false, Ordering::SeqCst);
             });
         }

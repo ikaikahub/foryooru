@@ -23,6 +23,7 @@ mod queue;
 mod recommend;
 mod storage;
 mod tables;
+mod timing;
 
 use crate::booru::Site;
 use crate::commands::CurrentCore;
@@ -67,6 +68,7 @@ pub async fn start(site: JsValue, settings: JsValue, emit: js_sys::Function) -> 
 pub fn set_settings(settings: JsValue) -> std::result::Result<(), JsValue> {
     let settings: serde_json::Map<String, Value> =
         serde_wasm_bindgen::from_value(settings).map_err(|error| JsValue::from_str(&error.to_string()))?;
+    timing::set_enabled(settings.get("debug").and_then(Value::as_bool).unwrap_or(false));
     platform::replace_settings(settings);
     Ok(())
 }
@@ -92,7 +94,10 @@ pub async fn invoke(command: String, args: JsValue) -> std::result::Result<JsVal
     } else {
         serde_wasm_bindgen::from_value(args).map_err(|error| JsValue::from_str(&error.to_string()))?
     };
-    dispatch(&command, &args).await.map_err(error_to_js)
+    let started = timing::now();
+    let result = dispatch(&command, &args).await;
+    timing::record("command", started.elapsed(), command.clone());
+    result.map_err(error_to_js)
 }
 
 macro_rules! reply {
@@ -147,6 +152,7 @@ async fn dispatch(command: &str, a: &Value) -> Result<JsValue> {
         "import_from_file" => reply!(c::import_from_file(current()?, arg(a, "name")?, arg(a, "contents")?)),
         "set_site" => reply!(c::set_site(arg(a, "site")?)),
         "storage_usage" => reply!(c::storage_usage(current()?)),
+        "timings" => reply!(Ok::<_, Error>(crate::timing::drain())),
         "reset_database" => reply!(c::reset_database(current()?).await),
         "reset_all_databases" => reply!(c::reset_all_databases(current()?).await),
         _ => Err(Error::Storage(format!("Unknown command {command}"))),

@@ -4,6 +4,7 @@ use crate::db::now_ms;
 use crate::error::Result;
 use crate::queue::{Job, Priority};
 use crate::search::normalize_query;
+use crate::timing;
 pub use foryooru_core::kinds::{Media, TagKind, extension, is_still, media_of};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -251,9 +252,14 @@ pub struct Stored {
 }
 
 pub fn store_posts(conn: &mut Connection, raws: &[RawPost], partial: bool) -> Result<Stored> {
+    let started = timing::now();
     let tx = conn.transaction()?;
     let stored = store_posts_in(&tx, raws, partial)?;
+    let committing = timing::now();
     tx.commit()?;
+    let note = format!("{} posts", raws.len());
+    timing::record("store.commit", committing.elapsed(), note.clone());
+    timing::record("store", started.elapsed(), note);
     Ok(stored)
 }
 
@@ -264,6 +270,7 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
         retagged: false,
     };
     let mut changed = Vec::new();
+    let rows_started = timing::now();
     {
         let mut exists = tx.prepare_cached("SELECT 1 FROM posts WHERE id = ?1")?;
         let mut linked = tx.prepare_cached(
@@ -323,7 +330,10 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
             }
         }
     }
+    timing::record("store.rows", rows_started.elapsed(), format!("{} posts", raws.len()));
+    let tags_started = timing::now();
     stored.new_tags = link_tags(tx, &changed)?;
+    timing::record("store.tags", tags_started.elapsed(), format!("{} changed", changed.len()));
     Ok(stored)
 }
 
@@ -436,7 +446,9 @@ pub async fn search_page(
             "INSERT OR REPLACE INTO search_pages (query, page, total, post_ids, fetched_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![query, page, total, serde_json::to_string(&saved.ids)?, fetched_at],
         )?;
+        let committing = timing::now();
         tx.commit()?;
+        timing::record("store.commit", committing.elapsed(), format!("{} posts", raws.len()));
         saved
     };
     after_store(core, &saved);

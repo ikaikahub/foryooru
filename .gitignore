@@ -8,3 +8,4 @@ node_modules
 vite.config.js.timestamp-*
 /src/lib/engine/pkg
 /proxy/.wrangler
+debug
