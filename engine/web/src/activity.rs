@@ -125,6 +125,23 @@ pub fn record_signal(
     Ok(())
 }
 
+#[derive(Deserialize)]
+pub struct SignalEntry {
+    pub post: i64,
+    pub signal: Signal,
+    #[serde(default)]
+    pub tag: Option<String>,
+}
+
+pub fn record_signals(conn: &Connection, signals: &[SignalEntry]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for entry in signals {
+        record_signal(&tx, entry.post, entry.signal, entry.tag.as_deref())?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 const LOGGED: &str = "SELECT at, kind, post_id, source, quick_skip, long_look FROM (
          SELECT at, id, kind, post_id, source, quick_skip, long_look FROM activity
          WHERE kind IN ('view', 'like', 'unlike', 'dislike', 'undislike')
@@ -201,9 +218,11 @@ pub fn session(conn: &Connection) -> Result<Vec<Moment>> {
 
 pub fn prune(conn: &Connection) -> Result<()> {
     let oldest = now_ms() - RETENTION_MS;
-    conn.execute("DELETE FROM activity WHERE at < ?1", [oldest])?;
-    conn.execute("DELETE FROM signals WHERE at < ?1", [oldest])?;
-    conn.execute("DELETE FROM searches WHERE at < ?1", [oldest])?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM activity WHERE at < ?1", [oldest])?;
+    tx.execute("DELETE FROM signals WHERE at < ?1", [oldest])?;
+    tx.execute("DELETE FROM searches WHERE at < ?1", [oldest])?;
+    tx.commit()?;
     Ok(())
 }
 

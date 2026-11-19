@@ -10,7 +10,7 @@
   import { PRELOAD_AHEAD, touchDrag } from '$lib/attachments';
   import { addImpression, flushImpressions } from '$lib/impressions';
   import { isShortcut } from '$lib/keys';
-  import { signal } from '$lib/signals';
+  import { signal, flushSignals } from '$lib/signals';
   import { library } from '$lib/state/library.svelte';
   import { FLICK_SPEED, SPRING, swipeAxis, swipeSpeed, trackMove, type Moves } from '$lib/motion';
   import { onRerun, requestRerun } from '$lib/state/rerun.svelte';
@@ -79,6 +79,7 @@
     const requested = options;
     try {
       await flushImpressions();
+      await flushSignals();
       const batch = await api.feedNext(fetchChips, posts.map((post) => post.id), since, requested);
       if (requested === options) {
         library.remember(batch.posts);
@@ -234,6 +235,7 @@
     return () => {
       recordDwell();
       flushImpressions();
+      flushSignals();
       observer.disconnect();
       clearTimeout(settleTimer);
       stopAnimation();

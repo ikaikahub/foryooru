@@ -66,16 +66,20 @@ pub fn favourites(core: &Arc<Core>, user: String) -> Result<()> {
 }
 
 fn save_dated_likes(conn: &Connection, pending: &mut HashMap<i64, i64>) -> Result<usize> {
-    let mut statement = conn.prepare_cached(
-        "INSERT INTO likes (post_id, sort_at, liked_at) SELECT ?1, ?2, ?2 WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?1)
-         ON CONFLICT (post_id) DO UPDATE SET sort_at = excluded.sort_at, liked_at = excluded.liked_at",
-    )?;
     let mut saved = Vec::new();
-    for (id, added) in pending.iter() {
-        if statement.execute(params![id, added])? > 0 {
-            saved.push(*id);
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut statement = tx.prepare_cached(
+            "INSERT INTO likes (post_id, sort_at, liked_at) SELECT ?1, ?2, ?2 WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?1)
+             ON CONFLICT (post_id) DO UPDATE SET sort_at = excluded.sort_at, liked_at = excluded.liked_at",
+        )?;
+        for (id, added) in pending.iter() {
+            if statement.execute(params![id, added])? > 0 {
+                saved.push(*id);
+            }
         }
     }
+    tx.commit()?;
     for id in &saved {
         pending.remove(id);
     }
@@ -145,16 +149,20 @@ async fn import_danbooru(core: &Arc<Core>, user: &str) -> Result<()> {
 }
 
 fn save_undated_likes(conn: &Connection, ids: &[i64], newest_sort_at: i64) -> Result<usize> {
-    let mut statement = conn.prepare_cached(
-        "INSERT INTO likes (post_id, sort_at, liked_at) SELECT ?1, ?2, NULL WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?1)
-         ON CONFLICT (post_id) DO UPDATE SET sort_at = excluded.sort_at WHERE likes.liked_at IS NULL",
-    )?;
-    let mut exists = conn.prepare_cached("SELECT EXISTS (SELECT 1 FROM posts WHERE id = ?1)")?;
     let mut saved = 0;
-    for (index, id) in ids.iter().enumerate() {
-        statement.execute(params![id, newest_sort_at - index as i64])?;
-        saved += exists.query_row([id], |row| row.get::<_, bool>(0))? as usize;
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut statement = tx.prepare_cached(
+            "INSERT INTO likes (post_id, sort_at, liked_at) SELECT ?1, ?2, NULL WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?1)
+             ON CONFLICT (post_id) DO UPDATE SET sort_at = excluded.sort_at WHERE likes.liked_at IS NULL",
+        )?;
+        let mut exists = tx.prepare_cached("SELECT EXISTS (SELECT 1 FROM posts WHERE id = ?1)")?;
+        for (index, id) in ids.iter().enumerate() {
+            statement.execute(params![id, newest_sort_at - index as i64])?;
+            saved += exists.query_row([id], |row| row.get::<_, bool>(0))? as usize;
+        }
     }
+    tx.commit()?;
     Ok(saved)
 }
 

@@ -206,6 +206,12 @@ pub struct Stored {
 
 pub fn store_posts(conn: &mut Connection, raws: &[RawPost], partial: bool) -> Result<Stored> {
     let tx = conn.transaction()?;
+    let stored = store_posts_in(&tx, raws, partial)?;
+    tx.commit()?;
+    Ok(stored)
+}
+
+fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<Stored> {
     let mut stored = Stored {
         ids: Vec::with_capacity(raws.len()),
         new_tags: false,
@@ -271,8 +277,7 @@ pub fn store_posts(conn: &mut Connection, raws: &[RawPost], partial: bool) -> Re
             }
         }
     }
-    stored.new_tags = link_tags(&tx, &changed)?;
-    tx.commit()?;
+    stored.new_tags = link_tags(tx, &changed)?;
     Ok(stored)
 }
 
@@ -379,11 +384,13 @@ pub async fn search_page(
     let fetched_at = now_ms();
     let saved = {
         let mut conn = core.db.conn();
-        let saved = store_posts(&mut conn, &raws, false)?;
-        conn.execute(
+        let tx = conn.transaction()?;
+        let saved = store_posts_in(&tx, &raws, false)?;
+        tx.execute(
             "INSERT OR REPLACE INTO search_pages (query, page, total, post_ids, fetched_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![query, page, total, serde_json::to_string(&saved.ids)?, fetched_at],
         )?;
+        tx.commit()?;
         saved
     };
     after_store(core, &saved);

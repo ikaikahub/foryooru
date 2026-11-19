@@ -12,11 +12,15 @@ const MIN_LISTED_VIEWS: f64 = 10.0;
 const LISTED_TAGS: usize = 5;
 
 pub fn credit(conn: &Connection, tag: &str, posts: &[i64]) -> Result<()> {
-    let mut insert =
-        conn.prepare_cached("INSERT OR IGNORE INTO post_leads (post_id, tag) VALUES (?1, ?2)")?;
-    for post in posts {
-        insert.execute(params![post, tag])?;
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut insert =
+            tx.prepare_cached("INSERT OR IGNORE INTO post_leads (post_id, tag) VALUES (?1, ?2)")?;
+        for post in posts {
+            insert.execute(params![post, tag])?;
+        }
     }
+    tx.commit()?;
     Ok(())
 }
 

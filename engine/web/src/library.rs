@@ -31,35 +31,41 @@ fn ensure_post(conn: &Connection, id: i64) -> Result<()> {
     exists.map(|_| ()).ok_or(Error::PostNotFound)
 }
 
-pub fn toggle_like(conn: &Connection, id: i64) -> Result<PostState> {
-    ensure_post(conn, id)?;
-    if conn.execute("DELETE FROM likes WHERE post_id = ?1", [id])? == 0 {
+pub fn toggle_like(conn: &mut Connection, id: i64) -> Result<PostState> {
+    let tx = conn.transaction()?;
+    ensure_post(&tx, id)?;
+    if tx.execute("DELETE FROM likes WHERE post_id = ?1", [id])? == 0 {
         let now = now_ms();
-        conn.execute(
+        tx.execute(
             "INSERT INTO likes (post_id, sort_at, liked_at) VALUES (?1, ?2, ?2)",
             [id, now],
         )?;
-        conn.execute("DELETE FROM dislikes WHERE post_id = ?1", [id])?;
-        activity::record_reaction(conn, activity::Reaction::Like, id)?;
+        tx.execute("DELETE FROM dislikes WHERE post_id = ?1", [id])?;
+        activity::record_reaction(&tx, activity::Reaction::Like, id)?;
     } else {
-        activity::record_reaction(conn, activity::Reaction::Unlike, id)?;
+        activity::record_reaction(&tx, activity::Reaction::Unlike, id)?;
     }
-    post_state(conn, id)
+    let state = post_state(&tx, id)?;
+    tx.commit()?;
+    Ok(state)
 }
 
-pub fn toggle_dislike(conn: &Connection, id: i64) -> Result<PostState> {
-    ensure_post(conn, id)?;
-    if conn.execute("DELETE FROM dislikes WHERE post_id = ?1", [id])? == 0 {
-        conn.execute(
+pub fn toggle_dislike(conn: &mut Connection, id: i64) -> Result<PostState> {
+    let tx = conn.transaction()?;
+    ensure_post(&tx, id)?;
+    if tx.execute("DELETE FROM dislikes WHERE post_id = ?1", [id])? == 0 {
+        tx.execute(
             "INSERT INTO dislikes (post_id, disliked_at) VALUES (?1, ?2)",
             [id, now_ms()],
         )?;
-        conn.execute("DELETE FROM likes WHERE post_id = ?1", [id])?;
-        activity::record_reaction(conn, activity::Reaction::Dislike, id)?;
+        tx.execute("DELETE FROM likes WHERE post_id = ?1", [id])?;
+        activity::record_reaction(&tx, activity::Reaction::Dislike, id)?;
     } else {
-        activity::record_reaction(conn, activity::Reaction::Undislike, id)?;
+        activity::record_reaction(&tx, activity::Reaction::Undislike, id)?;
     }
-    post_state(conn, id)
+    let state = post_state(&tx, id)?;
+    tx.commit()?;
+    Ok(state)
 }
 
 pub use foryooru_core::recommend::Reaction;
@@ -116,28 +122,30 @@ pub struct Listing {
     pub hidden: Vec<HiddenTag>,
 }
 
-const BLACKLISTED: &str = "SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tag_id
-    JOIN blacklist b ON b.name = t.name WHERE pt.post_id = ";
-
 pub fn without_blacklisted(conn: &Connection, ids: Vec<i64>) -> Result<(Vec<i64>, Vec<HiddenTag>)> {
-    let mut statement = conn.prepare_cached(&format!("{BLACKLISTED} ?1 LIMIT 1"))?;
-    let mut kept = Vec::with_capacity(ids.len());
+    let mut statement = conn.prepare_cached(
+        "SELECT pt.post_id, MIN(t.name) FROM post_tags pt
+         JOIN tags t ON t.id = pt.tag_id
+         JOIN blacklist b ON b.name = t.name
+         WHERE pt.post_id IN (SELECT value FROM json_each(?1))
+         GROUP BY pt.post_id",
+    )?;
+    let mut blocked: HashSet<i64> = HashSet::new();
     let mut hidden: HashMap<String, i64> = HashMap::new();
-    for id in ids {
-        match statement
-            .query_row([id], |row| row.get::<_, String>(0))
-            .optional()?
-        {
-            Some(tag) => *hidden.entry(tag).or_default() += 1,
-            None => kept.push(id),
-        }
+    let rows = statement.query_map([serde_json::to_string(&ids)?], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in rows {
+        let (id, tag) = row?;
+        blocked.insert(id);
+        *hidden.entry(tag).or_default() += 1;
     }
     let mut hidden: Vec<HiddenTag> = hidden
         .into_iter()
         .map(|(name, count)| HiddenTag { name, count })
         .collect();
     hidden.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
-    Ok((kept, hidden))
+    Ok((ids.into_iter().filter(|id| !blocked.contains(id)).collect(), hidden))
 }
 
 pub enum Matching {
@@ -251,23 +259,29 @@ pub fn toggle_tag(conn: &Connection, list: TagList, name: &str) -> Result<()> {
         return Ok(());
     };
     let table = list.table();
-    if conn.execute(&format!("DELETE FROM {table} WHERE name = ?1"), [&name])? == 0 {
-        conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    if tx.execute(&format!("DELETE FROM {table} WHERE name = ?1"), [&name])? == 0 {
+        tx.execute(
             &format!("INSERT INTO {table} (name, created_at) VALUES (?1, ?2)"),
             params![name, now_ms()],
         )?;
     }
+    tx.commit()?;
     Ok(())
 }
 
 pub fn add_tags(conn: &Connection, list: TagList, names: &str) -> Result<()> {
     let table = list.table();
-    for name in names.split_whitespace().filter_map(clean_tag_name) {
-        conn.execute(
-            &format!("INSERT OR IGNORE INTO {table} (name, created_at) VALUES (?1, ?2)"),
-            params![name, now_ms()],
-        )?;
+    let now = now_ms();
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut insert =
+            tx.prepare_cached(&format!("INSERT OR IGNORE INTO {table} (name, created_at) VALUES (?1, ?2)"))?;
+        for name in names.split_whitespace().filter_map(clean_tag_name) {
+            insert.execute(params![name, now])?;
+        }
     }
+    tx.commit()?;
     Ok(())
 }
 
@@ -312,11 +326,13 @@ pub fn toggle_saved_search(conn: &Connection, query: &str) -> Result<()> {
     if query.is_empty() {
         return Ok(());
     }
-    if conn.execute("DELETE FROM saved_searches WHERE query = ?1", [&query])? == 0 {
-        conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    if tx.execute("DELETE FROM saved_searches WHERE query = ?1", [&query])? == 0 {
+        tx.execute(
             "INSERT INTO saved_searches (query, created_at) VALUES (?1, ?2)",
             params![query, now_ms()],
         )?;
     }
+    tx.commit()?;
     Ok(())
 }

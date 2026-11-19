@@ -399,7 +399,7 @@ pub async fn preview_post(core: CurrentCore, site: Site, id: i64) -> Result<Post
 }
 
 pub fn toggle_like(core: CurrentCore, id: i64, chips: Vec<String>) -> Result<PostState> {
-    let state = library::toggle_like(&core.db.conn(), id)?;
+    let state = library::toggle_like(&mut core.db.conn(), id)?;
     if state.liked {
         fetching::after_like(core.inner(), id, chips);
     }
@@ -411,7 +411,7 @@ pub async fn set_site_favourite(core: CurrentCore, id: i64, favourite: bool) -> 
 }
 
 pub fn toggle_dislike(core: CurrentCore, id: i64) -> Result<PostState> {
-    library::toggle_dislike(&core.db.conn(), id)
+    library::toggle_dislike(&mut core.db.conn(), id)
 }
 
 pub async fn liked_posts(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<Listing> {
@@ -504,6 +504,10 @@ pub fn record_signal(
     tag: Option<String>,
 ) -> Result<()> {
     activity::record_signal(&core.db.conn(), post, signal, tag.as_deref())
+}
+
+pub fn record_signals(core: CurrentCore, signals: Vec<activity::SignalEntry>) -> Result<()> {
+    activity::record_signals(&core.db.conn(), &signals)
 }
 
 pub fn record_search(core: CurrentCore, query: String) -> Result<()> {

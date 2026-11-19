@@ -10,6 +10,7 @@
   import AlgorithmControls from '$lib/components/AlgorithmControls.svelte';
   import RankedView, { BATCH } from '$lib/components/RankedView.svelte';
   import { flushImpressions } from '$lib/impressions';
+  import { flushSignals } from '$lib/signals';
   import { drawerLayout } from '$lib/screen';
   import { Loader } from '$lib/loader.svelte';
   import { onRerun } from '$lib/state/rerun.svelte';
@@ -25,6 +26,7 @@
   async function rank(): Promise<Remembered> {
     const chips = splitQuery(query);
     await flushImpressions();
+    await flushSignals();
     const ranked = await api.forYou(chips, settings.hideLiked, settings.forYouDiscover);
     return { ids: ranked.slice(0, BATCH).map((entry) => entry.id), fetchChips: chips };
   }
@@ -46,6 +48,7 @@
     const remembered = rankings.get(key);
     if (!remembered) return [];
     await flushImpressions();
+    await flushSignals();
     const found = await api.forYouMore(remembered.fetchChips, settings.hideLiked, settings.forYouDiscover, shown);
     if (found.broadened) {
       if (remembered.fetchChips.join(' ') === query) toast.show('Showing broader results…');

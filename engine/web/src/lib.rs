@@ -139,6 +139,7 @@ async fn dispatch(command: &str, a: &Value) -> Result<JsValue> {
         "toggle_saved_search" => reply!(c::toggle_saved_search(current()?, arg(a, "query")?)),
         "record_impressions" => reply!(c::record_impressions(current()?, arg(a, "impressions")?, arg(a, "chips")?)),
         "record_signal" => reply!(c::record_signal(current()?, arg(a, "post")?, arg(a, "signal")?, arg(a, "tag")?)),
+        "record_signals" => reply!(c::record_signals(current()?, arg(a, "signals")?)),
         "record_search" => reply!(c::record_search(current()?, arg(a, "query")?)),
         "activity" => reply!(c::activity(current()?, arg(a, "filter")?, arg(a, "page")?)),
         "table_sizes" => reply!(c::table_sizes(current()?)),
