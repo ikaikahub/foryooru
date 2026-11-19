@@ -1,6 +1,5 @@
 import { api, type Post, type SavedFile } from '$lib/api';
 import { toast } from '$lib/state/toast.svelte';
-import { CANCELLED } from '$lib/components/ActionButton.svelte';
 import { postUrl } from '$lib/sites';
 import { appPath, runSearch } from '$lib/navigation';
 import { signal } from '$lib/signals';
@@ -19,15 +18,12 @@ export const copyPostLink = (post: Post) => shared(post, navigator.clipboard.wri
 export const copyImageLink = (post: Post) => shared(post, navigator.clipboard.writeText(post.fileUrl || postUrl(post.id)));
 export const copyImage = (post: Post) => shared(post, api.copyImage(post.id));
 
-export async function saveOriginal(post: Post) {
-    announce(await shared(post, api.saveOriginal(post.id)));
+export async function saveSample(post: Post) {
+    announce(await shared(post, api.saveSample(post.id)));
 }
 
-export async function saveOriginalAs(post: Post) {
-    const saved = await api.saveOriginalAs(post.id);
-    if (!saved) return CANCELLED;
-    signal(post.id, 'shared');
-    announce(saved);
+export async function saveOriginal(post: Post) {
+    announce(await shared(post, api.saveOriginal(post.id)));
 }
 
 export function searchSimilar(post: Post) {

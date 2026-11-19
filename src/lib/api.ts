@@ -161,8 +161,8 @@ export const api = {
     resetAllDatabases: () => invoke<void>('reset_all_databases'),
     clearCache: () => Promise.resolve(),
     setCacheLimit: (_megabytes: number) => Promise.resolve(),
+    saveSample: (id: number) => saveSample(id),
     saveOriginal: (id: number) => saveOriginal(id),
-    saveOriginalAs: (id: number) => saveOriginal(id).then((saved): SavedFile | null => saved),
     pickSaveFolder: () => Promise.resolve<SaveFolder | null>(null),
     defaultSaveFolder: () => Promise.resolve('Downloads'),
     copyImage: (id: number) => copyImage(id),
@@ -242,23 +242,27 @@ function downloadBlob(blob: Blob, name: string): SavedFile {
     return { name, folder: 'Downloads' };
 }
 
-async function originalBlob(id: number) {
-    const url = imageUrl('original', id);
+async function mediaBlob(kind: 'sample' | 'original', id: number) {
+    const url = imageUrl(kind, id);
     if (!url) throw { kind: 'postNotFound', message: "That post isn't cached" } satisfies AppError;
     const response = await fetch(url);
     if (!response.ok) throw { kind: 'status', message: `The image server answered ${response.status}` } satisfies AppError;
     return { blob: await response.blob(), url };
 }
 
-async function saveOriginal(id: number) {
-    const { blob, url } = await originalBlob(id);
+async function saveImage(kind: 'sample' | 'original', id: number) {
+    const { blob, url } = await mediaBlob(kind, id);
     const extension = url.split('?')[0].split('.').pop() ?? 'jpg';
-    return downloadBlob(blob, `${id}.${extension}`);
+    const suffix = kind === 'sample' ? '_sample' : '';
+    return downloadBlob(blob, `${id}${suffix}.${extension}`);
 }
+
+const saveSample = (id: number) => saveImage('sample', id);
+const saveOriginal = (id: number) => saveImage('original', id);
 
 // browsers only accept PNG on the clipboard, so the image is redrawn as one
 async function copyImage(id: number) {
-    const { blob } = await originalBlob(id);
+    const { blob } = await mediaBlob('original', id);
     const bitmap = await createImageBitmap(blob);
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     canvas.getContext('2d')?.drawImage(bitmap, 0, 0);

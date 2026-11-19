@@ -133,7 +133,7 @@ export function taps(handlers: TapHandlers): Attachment<HTMLElement> {
         let singleTimer: ReturnType<typeof setTimeout> | undefined;
 
         function onpointerdown(e: PointerEvent) {
-            const tappable = e.isPrimary && !(e.target instanceof Element && e.target.closest(NOT_TAPPABLE));
+            const tappable = e.isPrimary && e.button === 0 && !(e.target instanceof Element && e.target.closest(NOT_TAPPABLE));
             down = tappable ? { x: e.clientX, y: e.clientY } : null;
             if (!tappable) lastTap = null;
         }
