@@ -5,6 +5,11 @@ import type { ClientInit } from '@sveltejs/kit';
 // settings come first: the engine needs the site and the account keys to start
 export const init: ClientInit = async () => {
     await restoreSettings();
+    // the database lives in the origin private file system, which older browsers don't provide at all
+    if (!navigator.storage?.getDirectory) {
+        showSplashMessage("This browser can't store Foryooru's database. Try a current Chrome, Edge, Firefox or Safari.");
+        return new Promise<never>(() => {});
+    }
     try {
         await startEngine(settingsForEngine().site as string, settingsForEngine());
     } catch (error) {
@@ -17,10 +22,19 @@ export const init: ClientInit = async () => {
 
 function showStartError(error: unknown) {
     const message = String((error as { message?: string })?.message ?? error);
-    const label = document.querySelector('#splash span');
+    if (message.includes('SecurityError')) {
+        // private windows refuse the storage the database lives in, and their error names mean nothing to a reader
+        showSplashMessage('Foryooru needs local storage, which private windows block. Open it in a normal window.');
+    } else if (message.includes('NoModificationAllowedError')) {
+        showSplashMessage('Foryooru is open in another tab. Close it, then reload this one.');
+    } else {
+        showSplashMessage(`Foryooru couldn't start: ${message}`);
+    }
+}
+
+function showSplashMessage(message: string) {
+    const label = document.querySelector('#splash > span');
     if (!label) return;
-    label.textContent = message.includes('NoModificationAllowedError')
-        ? 'Foryooru is open in another tab. Close it, then reload this one.'
-        : `Foryooru couldn't start: ${message}`;
+    label.textContent = message;
     document.getElementById('splash')?.classList.add('failed');
 }
