@@ -1,5 +1,5 @@
 use crate::activity::{self, ActivityPage};
-use crate::booru::{Order, Site};
+use crate::booru::{Booru, Order, Site};
 use crate::catalogue::{self, Post, PostDetail, SEARCH_PAGE_MAX_AGE, Tag};
 use crate::core::{self as sites, Core};
 use crate::corpus::Corpus;
@@ -389,6 +389,12 @@ pub async fn open_post(core: CurrentCore, id: i64) -> Result<PostDetail> {
         }
     }
     post_detail(core, id).await
+}
+
+// a shared link to the other site's post is shown as-is, without touching this site's database
+pub async fn preview_post(core: CurrentCore, site: Site, id: i64) -> Result<PostDetail> {
+    let booru = Booru::new(site, core.app, core.db.clone(), sites::http()?);
+    Ok(catalogue::detail_from_raw(booru.preview(id).await?))
 }
 
 pub fn toggle_like(core: CurrentCore, id: i64, chips: Vec<String>) -> Result<PostState> {

@@ -160,6 +160,44 @@ pub fn is_partial(conn: &Connection, id: i64) -> Result<bool> {
         .unwrap_or(false))
 }
 
+// posts from the other site are only shown, so their details skip the database
+pub fn detail_from_raw(raw: RawPost) -> PostDetail {
+    let media = media_of(&raw.file_url);
+    let file_ext = extension(&raw.file_url).to_uppercase();
+    PostDetail {
+        post: Post {
+            id: raw.id,
+            rating: raw.rating.name().to_owned(),
+            score: raw.score,
+            width: raw.width,
+            height: raw.height,
+            preview_width: raw.preview_width,
+            preview_height: raw.preview_height,
+            posted_at: raw.posted_at,
+            file_url: raw.file_url,
+            preview_url: raw.preview_url,
+            sample_url: raw.sample_url,
+            media,
+            file_ext,
+            liked: false,
+            disliked: false,
+        },
+        tag_groups: vec![TagGroup {
+            label: "Tags",
+            tags: raw
+                .tags
+                .into_iter()
+                .map(|name| Tag {
+                    name,
+                    kind: None,
+                    count: None,
+                })
+                .collect(),
+        }],
+        blocked_by: Vec::new(),
+    }
+}
+
 pub struct Stored {
     pub ids: Vec<i64>,
     pub new_tags: bool,

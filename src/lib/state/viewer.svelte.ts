@@ -23,13 +23,16 @@ class Viewer {
     current = $derived(page.state.post ?? null);
     ids = $derived(page.state.ids ?? []);
     index = $derived(this.current === null ? -1 : this.ids.indexOf(this.current));
+    // a shared link may point at the other site, whose post is shown read-only
+    site = $derived((page.state.site as Site | undefined) ?? settings.site);
+    foreign = $derived(this.site !== settings.site);
     closing = $state(false);
     shown = $derived(this.current !== null && !this.closing);
     turnError = $state<unknown>(null);
     private turner: PageTurner | null = null;
     private turning = false;
     private opening: number | null = null;
-    private showing: { post: number; since: number; opened: boolean } | null = null;
+    private showing: { post: number; since: number; opened: boolean; foreign: boolean } | null = null;
     private hiddenAt: number | null = null;
 
     constructor() {
@@ -50,11 +53,12 @@ class Viewer {
 
     private track(id: number | null) {
         if (this.showing?.post === id) return;
-        if (this.showing) {
+        // a foreign id belongs to the other site's database, so it must not become an impression here
+        if (this.showing && !this.showing.foreign) {
             const { post, since, opened } = this.showing;
             addImpression({ post, source: 'viewer', ms: Math.round(performance.now() - since), opened });
         }
-        this.showing = id === null ? null : { post: id, since: performance.now(), opened: this.opening === id };
+        this.showing = id === null ? null : { post: id, since: performance.now(), opened: this.opening === id, foreign: this.foreign };
         this.opening = null;
     }
 
@@ -66,11 +70,11 @@ class Viewer {
     }
 
     // a shared link opens its post without adding a history entry, there is nothing behind it
-    openLinked(id: number) {
+    openLinked(id: number, site: Site) {
         this.turner = null;
         this.turnError = null;
         this.opening = id;
-        replaceState('', { post: id, ids: [id], depth: 1, fromUrl: true });
+        replaceState('', { post: id, ids: [id], depth: 1, site, fromUrl: true });
     }
 
     show(id: number, ids: number[]) {
@@ -142,16 +146,19 @@ class Viewer {
 export async function openLinkedPost() {
     const id = Number(page.url.searchParams.get('post'));
     if (!id || page.state.post === id) return;
-    const linkedSite = page.url.searchParams.get('site');
-    if (linkedSite !== null && linkedSite !== settings.site) {
-        const label = SITES[linkedSite as Site]?.label ?? linkedSite;
-        toast.show(`This link is for ${label}. Switch sites to open it.`);
+    // this runs during the first render; waiting a turn lets the router finish starting before its state is replaced
+    await api.waitUntilReady();
+    const linked = page.url.searchParams.get('site');
+    const site = linked !== null && Object.hasOwn(SITES, linked) ? (linked as Site) : settings.site;
+    // the post of the other site is only read from its api, this site's database stays untouched
+    if (site !== settings.site) {
+        viewer.openLinked(id, site);
         return;
     }
     try {
         const post = await api.openPost(id);
         library.remember([post]);
-        viewer.openLinked(post.id);
+        viewer.openLinked(post.id, site);
     } catch (error) {
         toast.show(errorMessage(error));
     }

@@ -84,6 +84,17 @@ pub fn current() -> Result<Arc<Core>> {
     })
 }
 
+// a shared link previews a post of the other site, whose client shares this connection
+pub fn http() -> Result<reqwest::Client> {
+    SITES.with(|sites| {
+        sites
+            .borrow()
+            .as_ref()
+            .map(|sites| sites.http.clone())
+            .ok_or(Error::NotStarted)
+    })
+}
+
 pub fn switch(site: Site) -> Result<()> {
     if current()?.site == site {
         return Ok(());

@@ -122,6 +122,7 @@ async fn dispatch(command: &str, a: &Value) -> Result<JsValue> {
         "posts" => reply!(c::posts(current()?, arg(a, "ids")?)),
         "post_detail" => reply!(c::post_detail(current()?, arg(a, "id")?).await),
         "open_post" => reply!(c::open_post(current()?, arg(a, "id")?).await),
+        "preview_post" => reply!(c::preview_post(current()?, arg(a, "site")?, arg(a, "id")?).await),
         "post_family" => reply!(c::post_family(current()?, arg(a, "id")?, arg(a, "chips")?).await),
         "toggle_like" => reply!(c::toggle_like(current()?, arg(a, "id")?, arg(a, "chips")?)),
         "toggle_dislike" => reply!(c::toggle_dislike(current()?, arg(a, "id")?)),

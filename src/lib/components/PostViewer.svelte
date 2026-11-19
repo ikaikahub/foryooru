@@ -13,6 +13,7 @@
   import { SvelteMap } from 'svelte/reactivity';
   import { drawerLayout } from '$lib/screen';
   import ErrorNote from './ErrorNote.svelte';
+  import ApiNote from './ApiNote.svelte';
   import LikeBurst from './LikeBurst.svelte';
   import PostMedia from './PostMedia.svelte';
   import PostTags from './PostTags.svelte';
@@ -53,7 +54,7 @@
 
   function likeFromTap() {
     const id = viewer.current;
-    if (id === null) return;
+    if (id === null || viewer.foreign) return;
     library.like(id);
     likeBurst = { post: id, count: likeBurst?.post === id ? likeBurst.count + 1 : 1 };
   }
@@ -112,9 +113,11 @@
     if (details.has(id) || pending.has(id)) return;
     pending.add(id);
     failures.delete(id);
+    const foreign = viewer.foreign;
+    const site = viewer.site;
     try {
-      const found = await api.postDetail(id);
-      library.remember([found]);
+      const found = foreign ? await api.previewPost(site, id) : await api.postDetail(id);
+      if (!foreign) library.remember([found]);
       details.set(id, found);
     } catch (error) {
       failures.set(id, error);
@@ -268,8 +271,8 @@
     if (e.key === 'Escape' && !tagMenu.current) viewer.close();
     else if (e.key === 'ArrowLeft') slide(-1);
     else if (e.key === 'ArrowRight') slide(1);
-    else if (e.key === 'f') library.toggleLike(viewer.current);
-    else if (e.key === 'd') library.toggleDislike(viewer.current);
+    else if (e.key === 'f' && !viewer.foreign) library.toggleLike(viewer.current);
+    else if (e.key === 'd' && !viewer.foreign) library.toggleDislike(viewer.current);
   }
 </script>
 
@@ -278,7 +281,7 @@
 {#snippet slidesAndArrows()}
   {#each slides as slide (slide.id)}
     {@const shown = details.get(slide.id)}
-    {@const media = shown ?? library.post(slide.id)}
+    {@const media = shown ?? (viewer.foreign ? null : library.post(slide.id))}
     {@const failure = failures.get(slide.id)}
     <div
       class="absolute inset-0 flex items-center justify-center [container-type:size]"
@@ -289,7 +292,7 @@
       {#if shown?.blockedBy.length}
         <p class="p-4 text-center opacity-70">It has a blacklisted tag: {shown.blockedBy.join(', ')}.</p>
       {:else if media}
-        <PostMedia post={media} active={slide.delta === 0} controls />
+        <PostMedia post={media} active={slide.delta === 0} controls site={viewer.site} />
       {:else if failure !== undefined}
         <ErrorNote error={failure} />
       {:else}
@@ -341,7 +344,7 @@
         <button class="btn btn-circle btn-sm sticky top-0 float-right split:hidden" aria-label="Close tags" onclick={() => (tagsOpen = false)}>✕</button>
         {#if viewer.current !== null && failures.has(viewer.current)}<ErrorNote error={failures.get(viewer.current)} />{/if}
         <div class={['transition-opacity', tagsPost !== post && 'opacity-50']}>
-          <PostTags post={tagsPost} target={staged} />
+          <PostTags post={tagsPost} target={staged} site={viewer.site} />
         </div>
       </aside>
     {/if}
@@ -383,7 +386,10 @@
         ]}
       >
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
-        {#if post && !post.blockedBy.length}<ViewerActions {post} />{/if}
+        {#if post && !post.blockedBy.length}
+          <ViewerActions {post} site={viewer.site} />
+        {/if}
+        {#if viewer.foreign}<ApiNote site={viewer.site} />{/if}
       </nav>
       <div
         class="absolute inset-x-0 bottom-0 z-[3]"
@@ -391,7 +397,7 @@
         style:transform="translateY({(1 - progress) * 100}%)"
       >
         {#if progress > 0}
-          <InfoSheet {post} target={staged} turnError={viewer.turnError} ondrag={(dy) => dragInfo(1, dy)} onrelease={(speed) => releaseInfo('info', speed)} />
+          <InfoSheet {post} target={staged} site={viewer.site} turnError={viewer.turnError} ondrag={(dy) => dragInfo(1, dy)} onrelease={(speed) => releaseInfo('info', speed)} />
         {/if}
       </div>
     {:else}
@@ -403,9 +409,10 @@
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
         {#if post && !post.blockedBy.length}
           <button class={[BAR_BUTTON, 'split:hidden']} onclick={() => (tagsOpen = !tagsOpen)}>Tags</button>
-          <ViewerActions {post} />
+          <ViewerActions {post} site={viewer.site} />
         {/if}
         <button class={BAR_BUTTON} aria-label="Close" title="Close (Esc)" onclick={() => viewer.close()}>✕</button>
+        {#if viewer.foreign}<ApiNote site={viewer.site} />{/if}
       </div>
     {/if}
   </div>

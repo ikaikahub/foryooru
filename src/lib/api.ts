@@ -1,6 +1,7 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { exportBackup, importBackup, invoke as callEngine, ready } from '$lib/engine/client';
 import { overwritePersisted, snapshotPersisted } from '$lib/state/persisted.svelte';
+import { settings } from '$lib/state/settings.svelte';
 import { GELBOORU_IMAGES } from '$lib/sites';
 
 export type TagType = 'general' | 'artist' | 'copyright' | 'character' | 'metadata' | 'deprecated';
@@ -126,8 +127,9 @@ export const api = {
     posts: (ids: number[]) => invoke<Post[]>('posts', { ids }),
     postDetail: (id: number) => invoke<PostDetail>('post_detail', { id }),
     openPost: (id: number) => invoke<PostDetail>('open_post', { id }),
+    previewPost: (site: Site, id: number) => previewPost(site, id),
     postFamily: (id: number, chips: string[]) => invoke<PostFamily>('post_family', { id, chips }),
-    fileSize: (id: number) => fileSize(id),
+    fileSize: (id: number, site: Site = settings.site) => fileSize(id, site),
     toggleLike: (id: number, chips: string[]) => invoke<PostState>('toggle_like', { id, chips }),
     toggleDislike: (id: number) => invoke<PostState>('toggle_dislike', { id }),
     likedPosts: (chips: string[], page: number) => invoke<Listing>('liked_posts', { chips, page }),
@@ -162,19 +164,21 @@ export const api = {
     resetAllDatabases: () => invoke<void>('reset_all_databases'),
     clearCache: () => Promise.resolve(),
     setCacheLimit: (_megabytes: number) => Promise.resolve(),
-    saveSample: (id: number) => saveSample(id),
-    saveOriginal: (id: number) => saveOriginal(id),
+    saveSample: (id: number, site: Site = settings.site) => saveImage('sample', id, site),
+    saveOriginal: (id: number, site: Site = settings.site) => saveImage('original', id, site),
     pickSaveFolder: () => Promise.resolve<SaveFolder | null>(null),
     defaultSaveFolder: () => Promise.resolve('Downloads'),
-    copyImage: (id: number) => copyImage(id),
+    copyImage: (id: number, site: Site = settings.site) => copyImage(id, site),
 };
 
 type MediaUrls = Record<'thumbnail' | 'sample' | 'original', string>;
 
-// every post the engine returns brings its CDN urls; a post only known by id is looked up once, in a batch
-const known = new SvelteMap<number, MediaUrls>();
+// the same post id can exist on both sites, so cached media urls carry the site
+const known = new SvelteMap<string, MediaUrls>();
 const lookups = new Set<number>();
 let lookupTimer: ReturnType<typeof setTimeout> | undefined;
+
+const mediaKey = (site: Site, id: number) => `${site}:${id}`;
 
 // Gelbooru's image servers refuse other sites' pages, so its images load through the proxy too.
 // The database keeps the original addresses, so changing the proxy doesn't break stored posts.
@@ -183,19 +187,19 @@ function throughProxy(url: string) {
     return `${GELBOORU_IMAGES}/img/${url.slice('https://'.length)}`;
 }
 
-function remember(value: unknown) {
+function remember(value: unknown, site: Site = settings.site) {
     if (Array.isArray(value)) {
-        value.forEach(remember);
+        value.forEach((post) => remember(post, site));
     } else if (value && typeof value === 'object') {
         const post = value as Partial<Post>;
         if (typeof post.id === 'number' && typeof post.fileUrl === 'string') {
-            known.set(post.id, {
+            known.set(mediaKey(site, post.id), {
                 thumbnail: throughProxy(post.previewUrl || post.sampleUrl || post.fileUrl),
                 sample: throughProxy(post.sampleUrl || post.fileUrl),
                 original: throughProxy(post.fileUrl),
             });
         }
-        Object.values(value).forEach(remember);
+        Object.values(value).forEach((post) => remember(post, site));
     }
 }
 
@@ -204,7 +208,7 @@ function lookUp(id: number) {
     lookups.add(id);
     clearTimeout(lookupTimer);
     lookupTimer = setTimeout(() => {
-        const ids = [...lookups].filter((wanted) => !known.has(wanted));
+        const ids = [...lookups].filter((wanted) => !known.has(mediaKey(settings.site, wanted)));
         if (ids.length) invoke<Post[]>('posts', { ids }).catch(() => {});
     });
 }
@@ -215,18 +219,25 @@ async function invoke<T>(command: string, args?: Record<string, unknown>) {
     return result;
 }
 
-export function imageUrl(kind: 'thumbnail' | 'sample' | 'original', id: number) {
-    const urls = known.get(id);
-    if (!urls) lookUp(id);
+// shared links show the other site's post without storing it, so the urls are kept under that site
+async function previewPost(site: Site, id: number) {
+    const post = await callEngine<PostDetail>('preview_post', { site, id });
+    remember(post, site);
+    return post;
+}
+
+export function imageUrl(kind: 'thumbnail' | 'sample' | 'original', id: number, site: Site = settings.site) {
+    const urls = known.get(mediaKey(site, id));
+    if (!urls && site === settings.site) lookUp(id);
     return urls?.[kind] ?? '';
 }
 
-export const showsOriginal = (img: EventTarget, id: number) =>
-    img instanceof HTMLImageElement && !!known.get(id) && img.currentSrc === known.get(id)?.original;
+export const showsOriginal = (img: EventTarget, id: number, site: Site = settings.site) =>
+    img instanceof HTMLImageElement && !!known.get(mediaKey(site, id)) && img.currentSrc === known.get(mediaKey(site, id))?.original;
 
 export async function loadVideoBase() {}
 
-export const videoUrl = (id: number) => imageUrl('original', id);
+export const videoUrl = (id: number, site: Site = settings.site) => imageUrl('original', id, site);
 
 function desktopOnly(feature: string): AppError {
     return { kind: 'tauri', message: `${feature} needs the desktop app` };
@@ -243,27 +254,24 @@ function downloadBlob(blob: Blob, name: string): SavedFile {
     return { name, folder: 'Downloads' };
 }
 
-async function mediaBlob(kind: 'sample' | 'original', id: number) {
-    const url = imageUrl(kind, id);
+async function mediaBlob(kind: 'sample' | 'original', id: number, site: Site) {
+    const url = imageUrl(kind, id, site);
     if (!url) throw { kind: 'postNotFound', message: "That post isn't cached" } satisfies AppError;
     const response = await fetch(url);
     if (!response.ok) throw { kind: 'status', message: `The image server answered ${response.status}` } satisfies AppError;
     return { blob: await response.blob(), url };
 }
 
-async function saveImage(kind: 'sample' | 'original', id: number) {
-    const { blob, url } = await mediaBlob(kind, id);
+async function saveImage(kind: 'sample' | 'original', id: number, site: Site) {
+    const { blob, url } = await mediaBlob(kind, id, site);
     const extension = url.split('?')[0].split('.').pop() ?? 'jpg';
     const suffix = kind === 'sample' ? '_sample' : '';
     return downloadBlob(blob, `${id}${suffix}.${extension}`);
 }
 
-const saveSample = (id: number) => saveImage('sample', id);
-const saveOriginal = (id: number) => saveImage('original', id);
-
 // browsers only accept PNG on the clipboard, so the image is redrawn as one
-async function copyImage(id: number) {
-    const { blob } = await mediaBlob('original', id);
+async function copyImage(id: number, site: Site) {
+    const { blob } = await mediaBlob('original', id, site);
     const bitmap = await createImageBitmap(blob);
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
@@ -271,8 +279,8 @@ async function copyImage(id: number) {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
 }
 
-async function fileSize(id: number) {
-    const url = imageUrl('original', id);
+async function fileSize(id: number, site: Site) {
+    const url = imageUrl('original', id, site);
     if (!url) return null;
     const length = (await fetch(url, { method: 'HEAD' })).headers.get('content-length');
     return length ? Number(length) : null;

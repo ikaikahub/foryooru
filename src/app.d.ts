@@ -1,3 +1,5 @@
+import type { Site } from '$lib/api';
+
 declare global {
     namespace App {
         interface PageState {
@@ -6,6 +8,7 @@ declare global {
             depth?: number;
             turned?: boolean;
             fromUrl?: boolean;
+            site?: Site;
             listPage?: number;
             searching?: boolean;
             menuOpen?: boolean;

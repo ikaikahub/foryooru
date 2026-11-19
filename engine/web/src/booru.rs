@@ -239,6 +239,14 @@ impl Booru {
         }
     }
 
+    // fetches one post without storing it, for shared links to the other site
+    pub async fn preview(&self, id: i64) -> Result<RawPost> {
+        match self {
+            Booru::Gelbooru(gelbooru) => gelbooru.preview(id).await,
+            Booru::Danbooru(danbooru) => danbooru.preview(id).await,
+        }
+    }
+
     pub async fn tag_details(&self, names: &[String]) -> Result<HashMap<String, TagDetail>> {
         match self {
             Booru::Gelbooru(gelbooru) => gelbooru.tag_details(names).await,

@@ -216,6 +216,24 @@ impl Danbooru {
             .await
     }
 
+    // the Danbooru side of a shared link preview, see Gelbooru::preview
+    pub async fn preview(&self, id: i64) -> Result<RawPost> {
+        let query = id.to_string();
+        let body = self
+            .call(
+                &format!("posts/{id}.json"),
+                &[],
+                Logged {
+                    endpoint: "preview",
+                    query: &query,
+                    page: None,
+                },
+            )
+            .await?;
+        let post: DanbooruPost = serde_json::from_value(body)?;
+        post.into_raw().ok_or(Error::PostNotFound)
+    }
+
     pub async fn set_favourite(&self, post_id: i64, favourite: bool) -> Result<()> {
         if self.credentials()?.is_none() {
             return Err(Error::NeedsDanbooruLogin);

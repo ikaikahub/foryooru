@@ -227,6 +227,52 @@ impl Gelbooru {
         ))
     }
 
+    // A shared link can show a Gelbooru post while another site is open, without storing it here.
+    // The user's own key is used when there is one; otherwise the relay fills in its shared key,
+    // which it only allows for this plain single-post lookup.
+    pub async fn preview(&self, id: i64) -> Result<RawPost> {
+        let relay = booru::setting(&self.app, API_SETTING)?;
+        let mut params: Vec<(&str, String)> = vec![
+            ("page", "dapi".into()),
+            ("s", "post".into()),
+            ("q", "index".into()),
+            ("json", "1".into()),
+            ("tags", format!("id:{id}")),
+            ("pid", "0".into()),
+            ("limit", "1".into()),
+        ];
+        let (api_key, user_id) = (
+            booru::setting(&self.app, "apiKey")?,
+            booru::setting(&self.app, "userId")?,
+        );
+        if !api_key.is_empty() && !user_id.is_empty() {
+            params.push(("api_key", api_key));
+            params.push(("user_id", user_id));
+        }
+        let query = format!("id:{id}");
+        let body = self
+            .requester
+            .send(
+                Method::GET,
+                &relay,
+                &params,
+                Logged {
+                    endpoint: "preview",
+                    query: &query,
+                    page: None,
+                },
+            )
+            .await?;
+        let posts: Vec<GelbooruPost> = match body.get("post") {
+            Some(posts) => serde_json::from_value(posts.clone())?,
+            None => Vec::new(),
+        };
+        posts
+            .into_iter()
+            .find_map(GelbooruPost::into_raw)
+            .ok_or(Error::PostNotFound)
+    }
+
     pub async fn favourites_of(&self, user_id: &str) -> Result<Vec<(i64, i64)>> {
         let mut favourites = Vec::new();
         for page in 0.. {
