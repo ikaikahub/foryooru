@@ -379,6 +379,18 @@ pub async fn post_detail(core: CurrentCore, id: i64) -> Result<PostDetail> {
         .ok_or(Error::PostNotFound)
 }
 
+// a shared link opens one post even when this database has never seen it
+pub async fn open_post(core: CurrentCore, id: i64) -> Result<PostDetail> {
+    if catalogue::posts(&core.db.conn(), &[id])?.is_empty() {
+        let (raws, _) = core.booru.search(&format!("id:{id}"), 0, None).await?;
+        if !raws.is_empty() {
+            let stored = catalogue::store_posts(&mut core.db.conn(), &raws, false)?;
+            catalogue::after_store(core.inner(), &stored);
+        }
+    }
+    post_detail(core, id).await
+}
+
 pub fn toggle_like(core: CurrentCore, id: i64, chips: Vec<String>) -> Result<PostState> {
     let state = library::toggle_like(&core.db.conn(), id)?;
     if state.liked {

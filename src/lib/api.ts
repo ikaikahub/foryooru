@@ -125,6 +125,7 @@ export const api = {
         invoke<FeedBatch>('feed_next', { chips, seen, since, options }),
     posts: (ids: number[]) => invoke<Post[]>('posts', { ids }),
     postDetail: (id: number) => invoke<PostDetail>('post_detail', { id }),
+    openPost: (id: number) => invoke<PostDetail>('open_post', { id }),
     postFamily: (id: number, chips: string[]) => invoke<PostFamily>('post_family', { id, chips }),
     fileSize: (id: number) => fileSize(id),
     toggleLike: (id: number, chips: string[]) => invoke<PostState>('toggle_like', { id, chips }),

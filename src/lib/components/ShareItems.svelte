@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Post } from '$lib/api';
-  import { copyImage, copyImageLink, copyPostLink, openPostLink, saveOriginal, saveSample } from '$lib/postActions';
+  import { copyImage, copyImageLink, copyPageLink, copyPostLink, openPostLink, saveOriginal, saveSample } from '$lib/postActions';
   import type { ClassValue } from 'svelte/elements';
   import ActionButton from './ActionButton.svelte';
 
@@ -8,6 +8,7 @@
 </script>
 <li><ActionButton class={className} {iconEnd} icon="↗" label="Open original url" doneLabel="Copied" action={() => openPostLink(post)} /></li>
 <li><ActionButton class={className} {iconEnd} icon="🌐" label="Copy post address" doneLabel="Copied" action={() => copyPostLink(post)} /></li>
+<li><ActionButton class={className} {iconEnd} icon="📎" label="Copy Foryooru link" doneLabel="Copied" action={() => copyPageLink(post)} /></li>
 <li><ActionButton class={className} {iconEnd} icon="🔗" label="Copy media address" doneLabel="Copied" action={() => copyImageLink(post)} /></li>
 {#if post.media !== 'video'}
   <li><ActionButton class={className} {iconEnd} icon="📋" label="Copy image" doneLabel="Copied" action={() => copyImage(post)} /></li>

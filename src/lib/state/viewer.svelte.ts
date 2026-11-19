@@ -1,7 +1,12 @@
 import { goto, pushState, replaceState } from '$app/navigation';
 import { page } from '$app/state';
+import { api, errorMessage, type Site } from '$lib/api';
 import { addImpression } from '$lib/impressions';
-import { goBack } from '$lib/navigation';
+import { goBack, hrefWith } from '$lib/navigation';
+import { library } from '$lib/state/library.svelte';
+import { settings } from '$lib/state/settings.svelte';
+import { toast } from '$lib/state/toast.svelte';
+import { SITES } from '$lib/sites';
 import { tick, untrack } from 'svelte';
 
 export type PageTurner = {
@@ -10,6 +15,9 @@ export type PageTurner = {
     href: (page: number) => string;
     load: (page: number) => Promise<number[]>;
 };
+
+// links carry the site and the post so they reopen the same image
+const postHref = (id: number) => hrefWith(page.url, { site: settings.site, post: id });
 
 class Viewer {
     current = $derived(page.state.post ?? null);
@@ -54,7 +62,15 @@ class Viewer {
         this.turner = turner;
         this.turnError = null;
         this.opening = id;
-        pushState('', { post: id, ids, depth: 1, listPage: turner?.current });
+        pushState(postHref(id), { post: id, ids, depth: 1, listPage: turner?.current });
+    }
+
+    // a shared link opens its post without adding a history entry, there is nothing behind it
+    openLinked(id: number) {
+        this.turner = null;
+        this.turnError = null;
+        this.opening = id;
+        replaceState('', { post: id, ids: [id], depth: 1, fromUrl: true });
     }
 
     show(id: number, ids: number[]) {
@@ -63,7 +79,7 @@ class Viewer {
             return;
         }
         this.opening = id;
-        pushState('', { ...page.state, post: id, ids, listPage: undefined, depth: (page.state.depth ?? 1) + 1 });
+        pushState(postHref(id), { ...page.state, post: id, ids, listPage: undefined, depth: (page.state.depth ?? 1) + 1 });
     }
 
     step(delta: number) {
@@ -73,14 +89,22 @@ class Viewer {
             this.turnPage(delta);
             return;
         }
-        pushState('', { ...page.state, post: next, depth: (page.state.depth ?? 1) + 1 });
+        pushState(postHref(next), { ...page.state, post: next, depth: (page.state.depth ?? 1) + 1 });
     }
 
     async close() {
         if (this.closing) return;
-        const { depth = 1, turned = false } = page.state;
+        const { depth = 1, turned = false, fromUrl = false } = page.state;
         this.closing = true;
         try {
+            if (fromUrl) {
+                // there is no list behind a shared link, so just drop the post from the address
+                const target = new URL(page.url);
+                target.searchParams.delete('post');
+                target.searchParams.delete('site');
+                replaceState(target.pathname + target.search, {});
+                return;
+            }
             const steps = turned ? depth - 1 : depth;
             if (steps > 0) {
                 await goBack(steps);
@@ -104,12 +128,32 @@ class Viewer {
             const ids = await turner.load(target);
             const post = delta > 0 ? ids[0] : ids[ids.length - 1];
             if (post === undefined) return;
-            await goto(turner.href(target), { state: { post, ids, depth: 1, turned: true, listPage: target } });
+            const href = hrefWith(new URL(turner.href(target), page.url), { site: settings.site, post });
+            await goto(href, { state: { post, ids, depth: 1, turned: true, listPage: target } });
         } catch (error) {
             this.turnError = error;
         } finally {
             this.turning = false;
         }
+    }
+}
+
+// called once the app is running, when the address came from a shared link
+export async function openLinkedPost() {
+    const id = Number(page.url.searchParams.get('post'));
+    if (!id || page.state.post === id) return;
+    const linkedSite = page.url.searchParams.get('site');
+    if (linkedSite !== null && linkedSite !== settings.site) {
+        const label = SITES[linkedSite as Site]?.label ?? linkedSite;
+        toast.show(`This link is for ${label}. Switch sites to open it.`);
+        return;
+    }
+    try {
+        const post = await api.openPost(id);
+        library.remember([post]);
+        viewer.openLinked(post.id);
+    } catch (error) {
+        toast.show(errorMessage(error));
     }
 }
 

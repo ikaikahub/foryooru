@@ -12,6 +12,7 @@
   import TagMenu from '$lib/components/TagMenu.svelte';
   import Toast from '$lib/components/Toast.svelte';
   import { library } from '$lib/state/library.svelte';
+  import { openLinkedPost } from '$lib/state/viewer.svelte';
   import { rememberSearch, staged, urlQuery } from '$lib/state/search.svelte';
   import { scrollPage } from '$lib/pageScroller.svelte';
   import { rememberScroll } from '$lib/scrollMemory';
@@ -47,6 +48,7 @@
 
   onMount(() => {
     library.load();
+    void openLinkedPost();
   });
 
   // the engine has started and the app is up, so the plain HTML loading screen from app.html can fade away

@@ -17,6 +17,9 @@ export function runSearch(query: string, path = SEARCHABLE_PAGES.has(appPath()) 
     const target = path === appPath() ? new URL(page.url) : new URL(base + path, page.url);
     target.searchParams.set('q', query);
     target.searchParams.delete('page');
+    // the viewer's post params must not follow a new search, or a reload would reopen that post
+    target.searchParams.delete('post');
+    target.searchParams.delete('site');
     return openOrRerun(target.pathname + target.search);
 }
 

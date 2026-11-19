@@ -5,6 +5,7 @@ declare global {
             ids?: number[];
             depth?: number;
             turned?: boolean;
+            fromUrl?: boolean;
             listPage?: number;
             searching?: boolean;
             menuOpen?: boolean;
