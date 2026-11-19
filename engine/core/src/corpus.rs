@@ -135,11 +135,7 @@ type Scored = Vec<(usize, f64)>;
 #[derive(Default)]
 pub struct Adjust {
     pub posts: HashMap<i64, f64>,
-    pub tags: HashMap<i64, f64>,
 }
-
-// the strongest learned tag preferences also used to find posts
-const PREFERRED_TAGS: usize = 4;
 
 thread_local! {
     static PARTIAL: std::cell::RefCell<Vec<f32>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -655,7 +651,6 @@ impl Corpus {
     fn retrieve(
         &self,
         weighted: &[(usize, f64, f64)],
-        preferred: &[(usize, f64)],
         postings: &[Vec<u32>],
         mask: &Mask,
     ) -> Option<Vec<usize>> {
@@ -664,7 +659,7 @@ impl Corpus {
             .filter(|(col, weight, _)| *weight > 0.0 && postings[*col].len() <= MAX_DEFINING_POSTS)
             .collect();
         ordered.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
-        let mut strongest: Vec<(usize, f64)> = ordered
+        let strongest: Vec<(usize, f64)> = ordered
             .into_iter()
             .enumerate()
             .filter(|(rank, (col, _, _))| {
@@ -673,11 +668,6 @@ impl Corpus {
             .map(|(_, (col, _, contribution))| (*col, *contribution))
             .take(TASTE_TAGS)
             .collect();
-        strongest.extend(
-            preferred
-                .iter()
-                .filter(|(col, _)| postings[*col].len() <= MAX_DEFINING_POSTS),
-        );
         if strongest.is_empty() {
             return None;
         }
@@ -733,28 +723,11 @@ impl Corpus {
             .choose_multiple(&mut rng, wanted)
     }
 
-    fn tag_columns(&self, adjust: &Adjust) -> HashMap<u32, f64> {
-        adjust
-            .tags
-            .iter()
-            .filter_map(|(tag, weight)| self.col_of_tag.get(tag).map(|col| (*col, *weight)))
-            .collect()
-    }
-
-    fn adjustment(&self, row: usize, adjust: &Adjust, tag_columns: &HashMap<u32, f64>) -> f64 {
-        let post = adjust.posts.get(&self.ids[row]).copied().unwrap_or(1.0);
-        if tag_columns.is_empty() {
-            return post;
-        }
-        let tags: f64 = self
-            .entries(row)
-            .filter_map(|entry| tag_columns.get(&self.cols[entry]))
-            .sum();
-        post * tags.exp()
+    fn adjustment(&self, row: usize, adjust: &Adjust) -> f64 {
+        adjust.posts.get(&self.ids[row]).copied().unwrap_or(1.0)
     }
 
     fn scored(&self, taste: Taste, mask: &Mask, adjust: &Adjust) -> Scored {
-        let tag_columns = self.tag_columns(adjust);
         let mut dense = vec![0.0; self.tag_of_col.len()];
         let mut learned = vec![0.0; tag_vectors::bundled().dimensions];
         let mut weighted = Vec::with_capacity(taste.profile.len());
@@ -783,18 +756,11 @@ impl Corpus {
             if let Some(fit) = taste.fit {
                 score *= fit.factor(self.score_percentiles[row]);
             }
-            score * self.adjustment(row, adjust, &tag_columns)
+            score * self.adjustment(row, adjust)
         };
-        let mut preferred: Vec<(usize, f64)> = tag_columns
-            .iter()
-            .filter(|(_, weight)| **weight > 0.0)
-            .map(|(col, weight)| (*col as usize, *weight))
-            .collect();
-        preferred.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
-        preferred.truncate(PREFERRED_TAGS);
         let candidates = self
             .postings()
-            .and_then(|postings| self.retrieve(&weighted, &preferred, postings, mask));
+            .and_then(|postings| self.retrieve(&weighted, postings, mask));
         let keep = |row: &usize| mask[*row];
         let scored: Scored = match candidates {
             Some(rows) => rows
@@ -874,12 +840,11 @@ impl Corpus {
     }
 
     pub fn rank_popular(&self, mask: &Mask, limit: usize, cap: usize, adjust: &Adjust) -> Vec<i64> {
-        let tag_columns = self.tag_columns(adjust);
         let scored: Scored = (0..self.size())
             .into_par_iter()
             .filter(|row| mask[*row])
             .map(|row| {
-                let factor = self.adjustment(row, adjust, &tag_columns);
+                let factor = self.adjustment(row, adjust);
                 (row, self.score_percentiles[row] * factor)
             })
             .filter(|(_, score)| *score > 0.0)

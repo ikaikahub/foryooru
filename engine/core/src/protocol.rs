@@ -1,5 +1,4 @@
 use crate::feed::FeedOptions;
-use crate::model::Model;
 use crate::recommend::UserData;
 use crate::search::Rating;
 use serde::{Deserialize, Serialize};
@@ -59,7 +58,6 @@ pub struct TagsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ForYouRequest {
     pub user: UserData,
-    pub model: Model,
     pub chips: Vec<String>,
     pub hide_liked: bool,
     pub discover: bool,
@@ -83,7 +81,6 @@ pub struct ForYouResponse {
 #[serde(rename_all = "camelCase")]
 pub struct FeedRequest {
     pub user: UserData,
-    pub model: Model,
     pub chips: Vec<String>,
     pub seen: Vec<i64>,
     pub since: i64,

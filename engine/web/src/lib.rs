@@ -16,8 +16,6 @@ mod import;
 mod impressions;
 mod library;
 mod limiter;
-mod model;
-mod overview;
 mod payoff;
 mod platform;
 mod progress;
@@ -144,9 +142,6 @@ async fn dispatch(command: &str, a: &Value) -> Result<JsValue> {
         "activity" => reply!(c::activity(current()?, arg(a, "filter")?, arg(a, "page")?)),
         "table_sizes" => reply!(c::table_sizes(current()?)),
         "table_page" => reply!(c::table_page(current()?, arg(a, "table")?, arg(a, "page")?)),
-        "algorithm_overview" => {
-            reply!(c::algorithm_overview(current()?, arg(a, "chips")?, arg(a, "hideLiked")?).await)
-        }
         "import_status" => reply!(Ok::<_, Error>(c::import_status(current()?))),
         "import_favourites" => reply!(c::import_favourites(current()?, arg(a, "user")?)),
         "import_from_file" => reply!(c::import_from_file(current()?, arg(a, "name")?, arg(a, "contents")?)),

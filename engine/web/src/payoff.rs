@@ -1,6 +1,5 @@
 use crate::error::Result;
 use rusqlite::{Connection, Row, params};
-use serde::Serialize;
 use std::collections::HashMap;
 
 const REACTION_WEIGHT: f64 = 3.0;
@@ -8,8 +7,6 @@ const ENGAGED_WEIGHT: f64 = 2.0;
 const PRIOR_VIEWS: f64 = 10.0;
 const MIN_FACTOR: f64 = 0.25;
 const MAX_FACTOR: f64 = 4.0;
-const MIN_LISTED_VIEWS: f64 = 10.0;
-const LISTED_TAGS: usize = 5;
 
 pub fn credit(conn: &Connection, tag: &str, posts: &[i64]) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
@@ -108,27 +105,12 @@ fn lead_tallies(conn: &Connection) -> Result<HashMap<String, Tally>> {
     Ok(tallies)
 }
 
-fn all_views_tally(conn: &Connection) -> Result<Tally> {
-    let mut statement = conn.prepare_cached(&format!(
-        "SELECT {VIEW_OUTCOME} FROM activity a WHERE a.kind = 'view' AND a.source = 'feed'"
-    ))?;
-    let mut overall = Tally::default();
-    for tally in statement.query_map([], |row| Ok(view_at(row, 0)?.tally()))? {
-        overall.add(tally?);
-    }
-    Ok(overall)
-}
-
 fn summed(tallies: &HashMap<String, Tally>) -> Tally {
     let mut overall = Tally::default();
     for tally in tallies.values() {
         overall.add(*tally);
     }
     overall
-}
-
-fn hit_rate(tally: Tally) -> Option<f64> {
-    (tally.judged() > 0.0).then(|| tally.good / tally.judged())
 }
 
 pub use foryooru_core::payoff::Payoff;
@@ -154,54 +136,7 @@ fn from_tallies(tallies: HashMap<String, Tally>) -> Payoff {
     )
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LeadTag {
-    tag: String,
-    views: f64,
-    factor: f64,
-}
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FetchStats {
-    fetched: i64,
-    judged: f64,
-    fetched_rate: Option<f64>,
-    overall_rate: Option<f64>,
-    best: Vec<LeadTag>,
-    worst: Vec<LeadTag>,
-}
-
-impl FetchStats {
-    pub fn read(conn: &Connection) -> Result<FetchStats> {
-        let tallies = lead_tallies(conn)?;
-        let fetched_total = summed(&tallies);
-        let payoff = from_tallies(tallies.clone());
-        let (mut best, mut worst): (Vec<LeadTag>, Vec<LeadTag>) = tallies
-            .into_iter()
-            .filter(|(_, tally)| tally.judged() >= MIN_LISTED_VIEWS)
-            .map(|(tag, tally)| LeadTag {
-                factor: payoff.factor(&tag),
-                views: tally.judged(),
-                tag,
-            })
-            .filter(|lead| lead.factor != 1.0)
-            .partition(|lead| lead.factor > 1.0);
-        best.sort_by(|a, b| b.factor.total_cmp(&a.factor));
-        best.truncate(LISTED_TAGS);
-        worst.sort_by(|a, b| a.factor.total_cmp(&b.factor));
-        worst.truncate(LISTED_TAGS);
-        Ok(FetchStats {
-            fetched: conn.query_row("SELECT COUNT(*) FROM post_leads", [], |row| row.get(0))?,
-            judged: fetched_total.judged(),
-            fetched_rate: hit_rate(fetched_total),
-            overall_rate: hit_rate(all_views_tally(conn)?),
-            best,
-            worst,
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {

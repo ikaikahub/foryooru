@@ -44,17 +44,6 @@ export type FeedOptions = { hideLiked: boolean; similarPerArtist: number | null;
 export type Usage = { files: number; bytes: number };
 export type PostFamily = { relation: 'family' | 'similar'; posts: Post[] };
 export type Signal = 'scrollBack' | 'videoLooped' | 'info' | 'shared' | 'tag' | 'similar' | 'opened';
-export type ModelStatus = { learned: number; graded: number; needed: number; model: number | null; current: number | null; trust: number };
-export type LeadTag = { tag: string; views: number; factor: number };
-export type FetchStats = {
-    fetched: number;
-    judged: number;
-    fetchedRate: number | null;
-    overallRate: number | null;
-    best: LeadTag[];
-    worst: LeadTag[];
-};
-export type AlgorithmOverview = { posts: number; candidates: number; unseen: number; model: ModelStatus; fetching: FetchStats };
 export type StorageUsage = { database: Usage; settings: Usage; cache: Usage; cacheLimitMb: number };
 
 export type ImportStatus = {
@@ -152,8 +141,6 @@ export const api = {
     tableSizes: () => invoke<TableSize[]>('table_sizes'),
     tablePage: (table: string, page: number) => invoke<TablePage>('table_page', { table, page }),
     importStatus: () => invoke<ImportStatus>('import_status'),
-    algorithmOverview: (chips: string[], hideLiked: boolean) =>
-        invoke<AlgorithmOverview>('algorithm_overview', { chips, hideLiked }),
     importFavourites: (user: string) => invoke<void>('import_favourites', { user }),
     setSite: (site: Site) => invoke<void>('set_site', { site }),
     importFromFile: (name: string, contents: string) => invoke<void>('import_from_file', { name, contents }),

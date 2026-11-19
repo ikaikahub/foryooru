@@ -182,17 +182,6 @@ fn newest_logged(conn: &Connection, at_or_before: i64, limit: usize) -> Result<V
         .collect::<rusqlite::Result<_>>()?)
 }
 
-pub fn logged_after(conn: &Connection, after: i64) -> Result<Vec<Logged>> {
-    let mut earlier = newest_logged(conn, after, SESSION_EVENTS)?;
-    earlier.reverse();
-    let mut statement = conn.prepare_cached(&format!("{LOGGED} WHERE at > ?1 ORDER BY at, id"))?;
-    let later = statement
-        .query_map([after], logged_from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    earlier.extend(later);
-    Ok(earlier)
-}
-
 fn recent_searches(conn: &Connection, now: i64) -> Result<Vec<Searched>> {
     let mut statement = conn.prepare_cached(
         "SELECT at, query FROM searches WHERE at <= ?1 ORDER BY at DESC, id DESC LIMIT ?2",

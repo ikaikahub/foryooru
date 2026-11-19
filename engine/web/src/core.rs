@@ -12,7 +12,7 @@ use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil};
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct Core {
     pub app: AppHandle,
@@ -21,7 +21,6 @@ pub struct Core {
     pub booru: Booru,
     pub corpus: Arc<CorpusCache>,
     pub import: Progress<ImportStatus>,
-    pub learning: Mutex<()>,
     pub queue: Arc<FetchQueue>,
     pub popular_seeding: AtomicBool,
 }
@@ -44,7 +43,6 @@ impl Core {
             db,
             corpus: Arc::new(CorpusCache::default()),
             import: Progress::new(import::EVENT),
-            learning: Mutex::new(()),
             queue: Arc::new(FetchQueue::default()),
             popular_seeding: AtomicBool::new(false),
         });

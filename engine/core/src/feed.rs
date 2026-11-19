@@ -2,7 +2,6 @@ use crate::corpus::{Adjust, Corpus, Mask, Taste};
 use crate::engine::{Vector, blend, fetch_gap, impression_share, weighted_sum};
 use crate::interests;
 use crate::kinds::TagKind;
-use crate::model::{self, Model};
 use crate::payoff::Payoff;
 use crate::recommend::{self, IMPRESSION_CAP, MAX_PER_ARTIST, SIMILAR_LEAN, UserData};
 use crate::search::Search;
@@ -302,7 +301,7 @@ pub fn leads_for(corpus: &Corpus, user: &UserData, search: &Search, hide_liked: 
             user,
             &profile,
             &candidates,
-            &recommend::adjustments(corpus, user, search, &candidates, None),
+            &recommend::adjustments(corpus, user, search, &candidates),
             &mut rng,
         ),
         session: session_lead(corpus, user, &mut rng),
@@ -348,7 +347,6 @@ pub fn next_batch(
     search: &Search,
     scrolled: Scrolled,
     options: FeedOptions,
-    model: &Model,
 ) -> Batch {
     let Scrolled {
         seen,
@@ -378,12 +376,10 @@ pub fn next_batch(
             interest.profile = blend(&interest.profile, &chip_profile, SIMILAR_LEAN);
         }
     }
-    let liked = model::Liked::new(corpus, user, &found);
-    let context = model::Context::new(corpus, &liked, &user.session);
     let liked_tags = options
         .discover
         .then(|| recommend::liked_tags(corpus, user));
-    let adjust = recommend::adjustments(corpus, user, search, &candidates, Some(&model.tags));
+    let adjust = recommend::adjustments(corpus, user, search, &candidates);
     let (mix, main) = if seed_profile.is_some() {
         (SIMILAR_MIX, Kind::Similar)
     } else {
@@ -411,15 +407,12 @@ pub fn next_batch(
                     &adjust,
                 ),
             ),
-            None => model.rerank(
-                &context,
-                corpus.top(
-                    found[*interest].taste(),
-                    &candidates,
-                    BATCH * 2,
-                    MAX_PER_ARTIST,
-                    &adjust,
-                ),
+            None => corpus.top(
+                found[*interest].taste(),
+                &candidates,
+                BATCH * 2,
+                MAX_PER_ARTIST,
+                &adjust,
             ),
         });
     }

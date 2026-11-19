@@ -5,9 +5,7 @@ use crate::engine::{
 };
 use crate::interests::{self, Interest};
 use crate::kinds::TagKind;
-use crate::model::{self, Model};
 use crate::payoff::Payoff;
-use crate::preference::TagPreference;
 use crate::search::Search;
 use crate::signals::Signals;
 use crate::tag_vectors;
@@ -25,8 +23,6 @@ pub const RANKING_LIMIT: usize = 2000;
 pub const MAX_PER_ARTIST: usize = 3;
 // the most of the ranking that impressions (looks and skips, not likes) can steer
 pub const IMPRESSION_CAP: f64 = 0.30;
-// how many top posts the learned model reorders; the rest keep the plain ranking's order
-const RERANK_WINDOW: usize = 100;
 // how strongly "similar:-id" chips push away, against 1.0 for the posts searched towards
 const SIMILAR_AWAY: f64 = 0.5;
 // share of each interest replaced by the similar: chips when both are present
@@ -528,24 +524,12 @@ pub fn sort_lean(corpus: &Corpus, search: &Search, mask: &Mask) -> HashMap<i64, 
         .collect()
 }
 
-pub fn adjustments(
-    corpus: &Corpus,
-    user: &UserData,
-    search: &Search,
-    mask: &Mask,
-    preference: Option<&TagPreference>,
-) -> Adjust {
+pub fn adjustments(corpus: &Corpus, user: &UserData, search: &Search, mask: &Mask) -> Adjust {
     let mut posts = sort_lean(corpus, search, mask);
     for (id, penalty) in user.signals.penalties(SEEN_DROP) {
         *posts.entry(id).or_insert(1.0) *= penalty;
     }
-    let tags = preference.map_or_else(HashMap::new, |preference| {
-        preference
-            .weights()
-            .filter_map(|(name, weight)| corpus.tag_id(name).map(|tag| (tag, weight)))
-            .collect()
-    });
-    Adjust { posts, tags }
+    Adjust { posts }
 }
 
 pub fn for_you_candidates(
@@ -569,7 +553,6 @@ pub fn for_you(
     search: &Search,
     hide_liked: bool,
     discover: bool,
-    model: &Model,
 ) -> Vec<(i64, bool)> {
     let mask = for_you_candidates(corpus, user, search, hide_liked);
     let mut found = interests(corpus, user);
@@ -582,7 +565,7 @@ pub fn for_you(
             add_interest(&mut found, lean, 1.0);
         }
     }
-    let adjust = adjustments(corpus, user, search, &mask, Some(&model.tags));
+    let adjust = adjustments(corpus, user, search, &mask);
     if found.is_empty() {
         return corpus
             .rank_popular(&mask, RANKING_LIMIT, MAX_PER_ARTIST, &adjust)
@@ -591,8 +574,6 @@ pub fn for_you(
             .collect();
     }
     let liked = discover.then(|| liked_tags(corpus, user));
-    let liked_features = model::Liked::new(corpus, user, &found);
-    let context = model::Context::new(corpus, &liked_features, &user.session);
     let lists = found
         .par_iter()
         .map(|interest| {
@@ -605,7 +586,7 @@ pub fn for_you(
             );
             match &liked {
                 Some(liked) => discovering(corpus, liked, ranked),
-                None => rerank_head(model, &context, ranked),
+                None => ranked,
             }
         })
         .collect();
@@ -618,13 +599,6 @@ pub fn for_you(
         explore_picks(corpus, user, &mask, &ranked, share)
     };
     interleave(ranked, picks, share)
-}
-
-fn rerank_head(model: &Model, context: &model::Context, mut ranked: Vec<i64>) -> Vec<i64> {
-    let rest = ranked.split_off(ranked.len().min(RERANK_WINDOW));
-    let mut head = model.rerank(context, ranked);
-    head.extend(rest);
-    head
 }
 
 pub fn similar(
@@ -647,7 +621,6 @@ pub fn similar(
         cap,
         &Adjust {
             posts: sort_lean(corpus, search, &mask),
-            tags: HashMap::new(),
         },
     ))
 }

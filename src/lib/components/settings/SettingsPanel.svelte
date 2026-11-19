@@ -12,6 +12,7 @@
   import { listen } from '$lib/engine/client';
   import { onMount } from 'svelte';
   import ApiGroup from './ApiGroup.svelte';
+  import AlgorithmGroup from './AlgorithmGroup.svelte';
   import AppearanceGroup from './AppearanceGroup.svelte';
   import BlacklistPanel from './BlacklistPanel.svelte';
   import GroupColumns from '../GroupColumns.svelte';
@@ -109,6 +110,8 @@
     <SettingsRow icon="❤️" label="Liked posts" onclick={() => goto(searchHref('/likes', rememberedSearch('/likes')))} />
     <SettingsRow icon="💔" label="Disliked posts" onclick={() => goto(searchHref('/disliked', rememberedSearch('/disliked')))} />
   </SettingsGroup>
+
+  <AlgorithmGroup />
 
   <SettingsGroup title="Activity">
     <SettingsRow icon="📜" label="View activity" onclick={() => goto(resolve('/activity'))} />

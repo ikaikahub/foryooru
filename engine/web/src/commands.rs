@@ -12,9 +12,6 @@ use crate::fetching;
 use crate::import::{self, ImportStatus};
 use crate::impressions::{self, Impression};
 use crate::library::{self, LISTING_PAGE_SIZE, Listing, Matching, PostState, SavedSearch, TagList};
-use crate::model;
-use crate::overview;
-use crate::payoff;
 use crate::recommend::{self, RANKING_LIMIT, UserData};
 use crate::search::{self, Rating, Search};
 use crate::storage::{self, StorageUsage};
@@ -118,9 +115,8 @@ pub async fn for_you_more(
 ) -> Result<MoreRanked> {
     let core = core.inner();
     let shown: HashSet<i64> = shown.into_iter().collect();
-    let model = model::load(&core.db.conn())?;
     let rank = |chips: Vec<String>| {
-        let (shown, model) = (shown.clone(), model.clone());
+        let shown = shown.clone();
         with_corpus(core, move |corpus, user| {
             recommend::for_you(
                 corpus,
@@ -128,7 +124,6 @@ pub async fn for_you_more(
                 &Search::parse(&chips),
                 hide_liked,
                 discover,
-                &model,
             )
             .into_iter()
             .filter(|(id, _)| !shown.contains(id))
@@ -211,9 +206,8 @@ pub async fn for_you(
 ) -> Result<Vec<Ranked>> {
     let search = Search::parse(&chips);
     fetching::for_similar(&core, &search).await;
-    let model = model::load(&core.db.conn())?;
     let ranking = with_corpus(core.inner(), move |corpus, user| {
-        recommend::for_you(corpus, user, &search, hide_liked, discover, &model)
+        recommend::for_you(corpus, user, &search, hide_liked, discover)
     })
     .await?;
     Ok(ranking
@@ -263,14 +257,8 @@ pub async fn feed_next(
     }
     let seen: HashSet<i64> = seen.into_iter().collect();
     let hide_liked = options.hide_liked;
-    let model = model::load(&core.db.conn())?;
     let rank = |chips: Vec<String>| {
-        let (seen, session_likes, options, model) = (
-            seen.clone(),
-            session_likes.clone(),
-            options.clone(),
-            model.clone(),
-        );
+        let (seen, session_likes, options) = (seen.clone(), session_likes.clone(), options.clone());
         with_corpus(core, move |corpus, user| {
             feed::next_batch(
                 corpus,
@@ -282,7 +270,6 @@ pub async fn feed_next(
                     session_likes: &session_likes,
                 },
                 options,
-                &model,
             )
         })
     };
@@ -312,7 +299,6 @@ pub async fn feed_next(
         }
     }
     fetching::after_batch(core, chips, batch.leads);
-    model::learn_in_background(core.clone());
     Ok(FeedBatch {
         posts: catalogue::post_details(&core.db.conn(), &batch.ids)?,
         exhausted: batch.exhausted,
@@ -524,31 +510,6 @@ pub fn table_sizes(core: CurrentCore) -> Result<Vec<TableSize>> {
 
 pub fn table_page(core: CurrentCore, table: String, page: i64) -> Result<TablePage> {
     tables::page(&core.db.conn(), &table, page)
-}
-
-pub async fn algorithm_overview(
-    core: CurrentCore,
-    chips: Vec<String>,
-    hide_liked: bool,
-) -> Result<overview::Overview> {
-    let (model, fetching) = {
-        let conn = core.db.conn();
-        (
-            model::load(&conn)?.status(),
-            payoff::FetchStats::read(&conn)?,
-        )
-    };
-    with_corpus(core.inner(), move |corpus, user| {
-        overview::overview(
-            corpus,
-            user,
-            &Search::parse(&chips),
-            hide_liked,
-            model,
-            fetching,
-        )
-    })
-    .await
 }
 
 pub fn import_status(core: CurrentCore) -> ImportStatus {

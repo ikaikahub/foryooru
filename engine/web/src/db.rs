@@ -167,10 +167,11 @@ const MIGRATIONS: &[&str] = &["
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+", "
+    DROP TABLE IF EXISTS model_state;
 "];
 
 pub const TABLES: &[&str] = &[
-    "model_state",
     "meta",
     "searches",
     "signals",
@@ -267,10 +268,10 @@ mod tests {
     }
 
     #[test]
-    fn fresh_databases_get_the_model_table() {
+    fn fresh_databases_do_not_keep_the_model_table() {
         let mut conn = Connection::open_in_memory().unwrap();
         migrate(&mut conn).unwrap();
-        assert!(has_table(&conn, "model_state"));
+        assert!(!has_table(&conn, "model_state"));
         assert!(has_table(&conn, "post_leads"));
         assert!(!has_table(&conn, "jev_training"));
     }
@@ -286,7 +287,7 @@ mod tests {
         )
         .unwrap();
         migrate(&mut conn).unwrap();
-        assert!(has_table(&conn, "model_state"));
+        assert!(!has_table(&conn, "model_state"));
         assert!(!has_table(&conn, "jev_training"));
     }
 }

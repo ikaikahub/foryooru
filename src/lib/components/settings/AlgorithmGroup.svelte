@@ -9,7 +9,7 @@
   }
 </script>
 
-<SettingsGroup title="All presets">
+<SettingsGroup title="Algorithm">
   <SettingsRow icon="♥" label="Hide Likes" detail="Posts you've liked won't show up in algorithm searches">
     <input type="checkbox" class="toggle toggle-sm" aria-label="Hide favourites" bind:checked={settings.hideLiked} />
   </SettingsRow>
