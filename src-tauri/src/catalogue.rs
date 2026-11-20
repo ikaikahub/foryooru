@@ -310,18 +310,20 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
     Ok(stored)
 }
 
+// post_count follows the links of the given posts: taken off before they're replaced, added back after.
+// counting by post keeps the tag side of post_tags unindexed, which made every batch rewrite most of that index
+const ADJUST_POST_COUNTS: &str = "UPDATE tags SET post_count = post_count + ?2 * linked.posts
+    FROM (SELECT tag_id, COUNT(*) AS posts FROM post_tags
+          WHERE post_id IN (SELECT value FROM json_each(?1)) GROUP BY tag_id) AS linked
+    WHERE tags.id = linked.tag_id";
+
 // rewrites the tags of every changed post in a handful of statements rather than one per tag
 fn link_tags(tx: &Transaction, posts: &[(i64, HashSet<String>)]) -> Result<bool> {
     if posts.is_empty() {
         return Ok(false);
     }
     let ids = serde_json::to_string(&posts.iter().map(|(post_id, _)| *post_id).collect::<Vec<_>>())?;
-    let mut affected: HashSet<i64> = tx
-        .prepare_cached(
-            "SELECT DISTINCT tag_id FROM post_tags WHERE post_id IN (SELECT value FROM json_each(?1))",
-        )?
-        .query_map([&ids], |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
+    tx.execute(ADJUST_POST_COUNTS, params![&ids, -1])?;
     tx.execute(
         "DELETE FROM post_tags WHERE post_id IN (SELECT value FROM json_each(?1))",
         [&ids],
@@ -349,17 +351,7 @@ fn link_tags(tx: &Transaction, posts: &[(i64, HashSet<String>)]) -> Result<bool>
         [serde_json::to_string(&pairs)?],
     )?;
 
-    let new_ids: Vec<i64> = tx
-        .prepare_cached("SELECT t.id FROM json_each(?1) j JOIN tags t ON t.name = j.value")?
-        .query_map([&names], |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
-    affected.extend(new_ids);
-
-    tx.execute(
-        "UPDATE tags SET post_count = (SELECT COUNT(*) FROM post_tags WHERE tag_id = tags.id)
-         WHERE id IN (SELECT value FROM json_each(?1))",
-        [serde_json::to_string(&affected)?],
-    )?;
+    tx.execute(ADJUST_POST_COUNTS, params![&ids, 1])?;
     Ok(new_tags)
 }
 

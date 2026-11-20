@@ -55,3 +55,11 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# optimised like release but quick to rebuild, for timing tests: cargo test --profile bench-fast
+[profile.bench-fast]
+inherits = "release"
+codegen-units = 16
+lto = false
+incremental = true
+panic = "unwind"

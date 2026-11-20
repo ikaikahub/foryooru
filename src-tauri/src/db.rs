@@ -175,6 +175,8 @@ const MIGRATIONS: &[&str] = &["
         key  TEXT NOT NULL,
         PRIMARY KEY (list, key)
     ) WITHOUT ROWID;
+", "
+    DROP INDEX IF EXISTS post_tags_by_tag;
 "];
 
 pub const TABLES: &[&str] = &[
