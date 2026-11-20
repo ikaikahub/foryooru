@@ -390,14 +390,13 @@ pub fn is_stored(conn: &Connection, query: &str, page: i64, max_age: i64) -> Res
     Ok(fetched_at.is_some_and(|fetched_at| now_ms() - fetched_at < max_age))
 }
 
+// a short page stores the exact total, which beats the site's count on the pages before it
 pub fn stored_total(conn: &Connection, query: &str) -> Result<Option<i64>> {
-    Ok(conn
-        .query_row(
-            "SELECT total FROM search_pages WHERE query = ?1 AND page = 0",
-            [normalize_query(query)],
-            |row| row.get(0),
-        )
-        .optional()?)
+    Ok(conn.query_row(
+        "SELECT MIN(total) FROM search_pages WHERE query = ?1",
+        [normalize_query(query)],
+        |row| row.get(0),
+    )?)
 }
 
 pub async fn search_page(
@@ -536,4 +535,27 @@ pub fn tags_named(conn: &Connection, names: &[String]) -> Result<Vec<Tag>> {
     Ok(statement
         .query_map([serde_json::to_string(names)?], |row| Tag::from_row(row, 0))?
         .collect::<rusqlite::Result<_>>()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_page_overrides_the_sites_count() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::migrate(&mut conn).unwrap();
+        assert_eq!(stored_total(&conn, "cat").unwrap(), None);
+        let store = |page: i64, total: i64| {
+            conn.execute(
+                "INSERT INTO search_pages (query, page, total, post_ids, fetched_at) VALUES ('cat', ?1, ?2, '[]', 0)",
+                params![page, total],
+            )
+            .unwrap();
+        };
+        store(0, 500);
+        assert_eq!(stored_total(&conn, "cat").unwrap(), Some(500));
+        store(1, 152);
+        assert_eq!(stored_total(&conn, "cat").unwrap(), Some(152));
+    }
 }

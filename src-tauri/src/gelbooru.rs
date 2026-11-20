@@ -244,13 +244,20 @@ impl Gelbooru {
                 },
             )
             .await?;
-        let total = body
+        let counted = body
             .pointer("/@attributes/count")
             .and_then(Value::as_i64)
             .unwrap_or(0);
         let posts: Vec<GelbooruPost> = match body.get("post") {
             Some(posts) => serde_json::from_value(posts.clone())?,
             None => Vec::new(),
+        };
+        // the count runs high on queries with negated tags, and a short page is the real end
+        let returned = posts.len() as i64;
+        let total = if returned < PAGE_SIZE {
+            page * PAGE_SIZE + returned
+        } else {
+            counted
         };
         Ok((
             posts
