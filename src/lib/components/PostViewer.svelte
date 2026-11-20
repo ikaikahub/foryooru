@@ -101,11 +101,18 @@
     });
     const root = document.documentElement;
     const scrolled = root.scrollTop;
-    const openedAt = location.href;
+    // the post in the address changes with every swipe, and a back gesture removes it before this runs,
+    // so only a different list underneath (the viewer turned a page) sends the grid back to the top
+    const listHref = () => {
+      const url = new URL(location.href);
+      url.searchParams.delete('post');
+      return url.href;
+    };
+    const openedOver = listHref();
     root.classList.add('overflow-hidden');
     return () => {
       root.classList.remove('overflow-hidden');
-      root.scrollTop = location.href === openedAt ? scrolled : 0;
+      root.scrollTop = listHref() === openedOver ? scrolled : 0;
     };
   });
 

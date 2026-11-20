@@ -5,7 +5,7 @@
 </script>
 
 <script lang="ts">
-  import { goto, replaceState } from '$app/navigation';
+  import { goto, pushState, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { api, errorMessage, type FeedOptions, type PostDetail } from '$lib/api';
   import { PRELOAD_AHEAD, touchDrag } from '$lib/attachments';
@@ -208,8 +208,11 @@
   async function showRelated(id: number) {
     info.target = 0;
     signal(id, 'opened');
+    // the related post gets its own history entry, so back returns to the post it was opened from
+    const remember = () => pushState(hrefWith(page.url, { site: settings.site, post: id }), page.state);
     const existing = posts.findIndex((post) => post.id === id);
     if (existing !== -1) {
+      remember();
       scrollToIndex(existing);
       return;
     }
@@ -218,10 +221,18 @@
       library.remember([related]);
       posts = [...posts.slice(0, current + 1), related, ...posts.slice(current + 1)];
       await tick();
+      remember();
       scrollToIndex(current + 1);
     } catch (caught) {
       toast.show(`Couldn't open that post: ${errorMessage(caught)}`);
     }
+  }
+
+  // going back to an entry left by showRelated scrolls to the post it names
+  function onpopstate() {
+    const linked = Number(new URL(location.href).searchParams.get('post'));
+    const index = posts.findIndex((post) => post.id === linked);
+    if (index !== -1 && index !== current) scrollToIndex(index);
   }
 
   function toggleInfo() {
@@ -408,7 +419,7 @@
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onpopstate} />
 <svelte:document onvisibilitychange={updateClock} />
 
 {#snippet currentTags()}
