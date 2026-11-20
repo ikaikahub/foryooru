@@ -1,4 +1,6 @@
 name: Build
+# releases started by pnpm release run on the branch, so name them after their tag
+run-name: ${{ inputs.release_tag || github.ref_name }}
 
 on:
   push:
