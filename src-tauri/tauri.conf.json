@@ -39,5 +39,11 @@
         "depends": ["gstreamer1-plugins-good", "gstreamer1-plugins-bad-free", "gstreamer1-plugin-openh264"]
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwMTU0RjgwNzBBOTA0Q0IKUldUTEJLbHdnRThWb09mQWVuTUpsRWtlaW5ONHNNQ2FaZ05NVDhBdTlKemFkY1lXeDluZ2I4L3kK",
+      "endpoints": ["https://github.com/ikaikahub/foryooru/releases/latest/download/latest.json"]
+    }
   }
 }

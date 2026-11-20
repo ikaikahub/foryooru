@@ -11,6 +11,7 @@
   import SidePanels from '$lib/components/sidebar/SidePanels.svelte';
   import TagMenu from '$lib/components/TagMenu.svelte';
   import Toast from '$lib/components/Toast.svelte';
+  import UpdateNotice from '$lib/components/UpdateNotice.svelte';
   import { library } from '$lib/state/library.svelte';
   import { rememberSearch, staged, urlQuery } from '$lib/state/search.svelte';
   import { scrollPage } from '$lib/pageScroller.svelte';
@@ -98,3 +99,4 @@
 <TagMenu />
 <PostMenu />
 <Toast />
+<UpdateNotice />
