@@ -9,23 +9,27 @@ import { toast } from './toast.svelte';
 class Library {
     favouriteTags = $state<Tag[]>([]);
     blacklist = $state<Tag[]>([]);
+    followedArtists = $state<Tag[]>([]);
     savedSearches = $state<SavedSearch[]>([]);
     reactions = new SvelteMap<number, PostState>();
 
     starred = $derived(new Set(this.favouriteTags.map((tag) => tag.name)));
     blacklisted = $derived(new Set(this.blacklist.map((tag) => tag.name)));
+    followed = $derived(new Set(this.followedArtists.map((tag) => tag.name)));
     savedQueries = $derived(new Set(this.savedSearches.map((search) => search.query)));
 
     async load() {
-        [this.favouriteTags, this.blacklist, this.savedSearches] = await Promise.all([
+        [this.favouriteTags, this.blacklist, this.followedArtists, this.savedSearches] = await Promise.all([
             api.tagList('favouriteTags'),
             api.tagList('blacklist'),
+            api.tagList('followedArtists'),
             api.savedSearches(),
         ]);
     }
 
     private setList(list: TagList, tags: Tag[]) {
         if (list === 'favouriteTags') this.favouriteTags = tags;
+        else if (list === 'followedArtists') this.followedArtists = tags;
         else this.blacklist = tags;
     }
 

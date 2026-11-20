@@ -26,5 +26,5 @@
   onRerun(() => listing.run(() => loadPage(current - 1)));
 </script>
 
-<h1 class="mb-2 text-lg font-semibold">{title}</h1>
+{#if title}<h1 class="mb-2 text-lg font-semibold">{title}</h1>{/if}
 <ListingView loader={listing} load={loadPage} {current} href={(number) => hrefWith(page.url, { page: number })} loadingText="Loading…" {emptyMessage} />

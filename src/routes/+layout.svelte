@@ -25,7 +25,7 @@
 
   let { children } = $props();
 
-  const REFRESHABLE = new Set(['/', '/for-you', '/likes', '/disliked']);
+  const REFRESHABLE = new Set(['/', '/for-you', '/following', '/likes', '/disliked']);
 
   rememberScroll();
   if (linuxDesktop) document.documentElement.dataset.os = 'linux';

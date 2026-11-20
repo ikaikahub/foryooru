@@ -18,6 +18,7 @@
   import PostMedia from './PostMedia.svelte';
   import PostTags from './PostTags.svelte';
   import ViewerActions from './ViewerActions.svelte';
+  import ArtistBar from './ArtistBar.svelte';
   import InfoSheet from './InfoSheet.svelte';
 
   const BAR_BUTTON = 'btn btn-sm';
@@ -392,6 +393,7 @@
       >
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
         {#if post && !post.blockedBy.length}
+          <ArtistBar {post} class="w-full items-center" />
           <ViewerActions {post} site={settings.site} />
         {/if}
         
@@ -413,6 +415,7 @@
       >
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
         {#if post && !post.blockedBy.length}
+          <ArtistBar {post} class="mr-2" />
           <button class={[BAR_BUTTON, 'split:hidden']} onclick={() => (tagsOpen = !tagsOpen)}>Tags</button>
           <ViewerActions {post} site={settings.site} />
         {/if}

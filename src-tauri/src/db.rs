@@ -178,10 +178,16 @@ const MIGRATIONS: &[&str] = &["
     ) WITHOUT ROWID;
 ", "
     DROP INDEX IF EXISTS post_tags_by_tag;
+", "
+    CREATE TABLE followed_artists (
+        name       TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL
+    );
 "];
 
 pub const TABLES: &[&str] = &[
     "sync_snapshot",
+    "followed_artists",
     "meta",
     "searches",
     "signals",

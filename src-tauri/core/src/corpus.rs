@@ -492,6 +492,26 @@ impl Corpus {
         self.tag_ids.get(name).copied()
     }
 
+    // every post carrying one of the named tags, as (tag name, post id), in one pass over the index
+    pub fn posts_tagged(&self, names: &[String]) -> Vec<(String, i64)> {
+        let wanted: HashMap<i64, &String> = names
+            .iter()
+            .filter_map(|name| self.tag_id(name).map(|tag| (tag, name)))
+            .collect();
+        if wanted.is_empty() {
+            return Vec::new();
+        }
+        let wanted = &wanted;
+        (0..self.size())
+            .flat_map(|row| {
+                self.entries(row).filter_map(move |entry| {
+                    let tag = self.tag_of_col[self.cols[entry] as usize];
+                    wanted.get(&tag).map(|name| ((*name).clone(), self.ids[row]))
+                })
+            })
+            .collect()
+    }
+
     pub fn mask_of(&self, ids: impl IntoIterator<Item = i64>) -> Mask {
         let mut mask = vec![false; self.size()];
         for id in ids {
@@ -940,5 +960,9 @@ mod tests {
         assert_eq!(ids(corpus.spread_artists(best.clone(), 1.0)), [10, 11, 12, 20]);
         // the known artist's 2nd post keeps 0.76 and its 3rd 0.58, so the new artist's 0.85 moves up to second
         assert_eq!(ids(corpus.spread_artists(best, 0.8)), [10, 20, 11, 12]);
+
+        let mut tagged = corpus.posts_tagged(&["new_artist".to_owned(), "unknown_artist".to_owned()]);
+        tagged.sort();
+        assert_eq!(tagged, [("new_artist".to_owned(), 20)]);
     }
 }

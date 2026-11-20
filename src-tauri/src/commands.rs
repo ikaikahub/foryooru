@@ -14,7 +14,9 @@ use crate::gallery;
 use crate::images::content_type;
 use crate::import::{self, ImportStatus};
 use crate::impressions::{self, Impression};
-use crate::library::{self, LISTING_PAGE_SIZE, Listing, Matching, PostState, SavedSearch, TagList};
+use crate::library::{
+    self, ArtistRow, FollowedOrder, LISTING_PAGE_SIZE, Listing, Matching, PostState, SavedSearch, TagList,
+};
 use crate::media;
 use crate::recommend::{self, RANKING_LIMIT, UserData};
 use crate::search::{self, Rating, Search};
@@ -408,6 +410,30 @@ pub fn toggle_dislike(core: CurrentCore, id: i64) -> Result<PostState> {
 pub async fn liked_posts(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<Listing> {
     let matching = matching_posts(core.inner(), &chips).await?;
     library::liked_listing(&core.db.conn(), &matching, page)
+}
+
+#[tauri::command]
+pub async fn followed_rows(core: CurrentCore, chips: Vec<String>, order: FollowedOrder) -> Result<Vec<ArtistRow>> {
+    let matching = matching_posts(core.inner(), &chips).await?;
+    let tagged = followed_tagged(core.inner()).await?;
+    library::followed_rows(&core.db.conn(), &matching, order, &tagged)
+}
+
+#[tauri::command]
+pub async fn followed_posts(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<Listing> {
+    let matching = matching_posts(core.inner(), &chips).await?;
+    let tagged = followed_tagged(core.inner()).await?;
+    library::followed_listing(&core.db.conn(), &matching, page, &tagged)
+}
+
+async fn followed_tagged(core: &Arc<Core>) -> Result<Vec<(String, i64)>> {
+    let names = library::tag_names(&core.db.conn(), TagList::FollowedArtists)?;
+    with_corpus(core, move |corpus, _| corpus.posts_tagged(&names)).await
+}
+
+#[tauri::command]
+pub async fn refresh_followed(core: CurrentCore, chips: Vec<String>) -> Result<()> {
+    fetching::refresh_followed(core.inner(), &chips).await
 }
 
 #[tauri::command]

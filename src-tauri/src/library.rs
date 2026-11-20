@@ -222,6 +222,7 @@ pub fn clear_likes(conn: &Connection) -> Result<()> {
 pub enum TagList {
     FavouriteTags,
     Blacklist,
+    FollowedArtists,
 }
 
 impl TagList {
@@ -229,8 +230,111 @@ impl TagList {
         match self {
             TagList::FavouriteTags => "favourite_tags",
             TagList::Blacklist => "blacklist",
+            TagList::FollowedArtists => "followed_artists",
         }
     }
+}
+
+// newest posts shown in each followed artist's row
+const ROW_POSTS: usize = 10;
+
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FollowedOrder {
+    LatestPost,
+    RecentlyFollowed,
+    Name,
+}
+
+#[derive(Serialize)]
+pub struct ArtistRow {
+    pub artist: Tag,
+    pub posts: Vec<Post>,
+}
+
+// post ids from newest to oldest. finding them goes through the corpus, post_tags has no index by tag
+fn newest_first(conn: &Connection, ids: &[i64]) -> Result<Vec<i64>> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT p.id FROM posts p WHERE p.id IN (SELECT value FROM json_each(?1))
+             ORDER BY COALESCE(p.posted_at, 0) DESC, p.id DESC",
+        )?
+        .query_map([serde_json::to_string(ids)?], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+// tagged holds (followed artist, post id) pairs, from Corpus::posts_tagged
+pub fn followed_rows(
+    conn: &Connection,
+    matching: &Matching,
+    order: FollowedOrder,
+    tagged: &[(String, i64)],
+) -> Result<Vec<ArtistRow>> {
+    let followed: Vec<(String, i64)> = conn
+        .prepare_cached("SELECT name, created_at FROM followed_artists")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let ids: Vec<i64> = tagged.iter().map(|(_, id)| *id).filter(|id| matching.contains(*id)).collect();
+    let position: HashMap<i64, usize> = newest_first(conn, &ids)?
+        .into_iter()
+        .enumerate()
+        .map(|(position, id)| (id, position))
+        .collect();
+    let mut newest_first: Vec<(String, i64)> = tagged
+        .iter()
+        .filter(|(_, id)| position.contains_key(id))
+        .cloned()
+        .collect();
+    newest_first.sort_by_key(|(_, id)| position[id]);
+    let (allowed, _) = without_blacklisted(conn, ids)?;
+    let allowed: HashSet<i64> = allowed.into_iter().collect();
+
+    // the position of an artist's first post in the newest-first list is how recently they posted
+    let mut rows: HashMap<String, (usize, Vec<i64>)> = HashMap::new();
+    for (position, (name, id)) in newest_first.into_iter().enumerate() {
+        if !allowed.contains(&id) {
+            continue;
+        }
+        let (_, posts) = rows.entry(name).or_insert_with(|| (position, Vec::new()));
+        if posts.len() < ROW_POSTS {
+            posts.push(id);
+        }
+    }
+    let names: Vec<String> = followed.iter().map(|(name, _)| name.clone()).collect();
+    let mut tags: HashMap<String, Tag> = catalogue::tags_named(conn, &names)?
+        .into_iter()
+        .map(|tag| (tag.name.clone(), tag))
+        .collect();
+    let mut ordered = followed;
+    match order {
+        FollowedOrder::LatestPost => ordered.sort_by_key(|(name, _)| rows.get(name).map_or(usize::MAX, |(first, _)| *first)),
+        FollowedOrder::RecentlyFollowed => ordered.sort_by_key(|(_, followed_at)| std::cmp::Reverse(*followed_at)),
+        FollowedOrder::Name => ordered.sort_by(|a, b| a.0.cmp(&b.0)),
+    }
+    ordered
+        .into_iter()
+        .map(|(name, _)| {
+            let ids = rows.remove(&name).map(|(_, ids)| ids).unwrap_or_default();
+            let mut posts = catalogue::posts(conn, &ids)?;
+            posts.sort_by_key(|post| ids.iter().position(|id| *id == post.id));
+            let artist = tags.remove(&name).unwrap_or(Tag {
+                name,
+                kind: Some(catalogue::TagKind::Artist),
+                count: None,
+            });
+            Ok(ArtistRow { artist, posts })
+        })
+        .collect()
+}
+
+pub fn followed_listing(conn: &Connection, matching: &Matching, page: i64, tagged: &[(String, i64)]) -> Result<Listing> {
+    let ids: HashSet<i64> = tagged.iter().map(|(_, id)| *id).filter(|id| matching.contains(*id)).collect();
+    let mut ids = newest_first(conn, &ids.into_iter().collect::<Vec<_>>())?;
+    if let Matching::SortedBy(keys) = matching {
+        ids.sort_by(|a, b| keys[b].total_cmp(&keys[a]));
+    }
+    let (kept, hidden) = without_blacklisted(conn, ids)?;
+    listing_page(conn, &kept, page, hidden)
 }
 
 pub fn clean_tag_name(name: &str) -> Option<String> {
@@ -335,4 +439,74 @@ pub fn toggle_saved_search(conn: &Connection, query: &str) -> Result<()> {
     }
     tx.commit()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::booru::RawPost;
+    use crate::search::Rating;
+
+    fn store(conn: &mut Connection, id: i64, posted_at: i64, artist: &str) {
+        let raw = RawPost {
+            id,
+            md5: format!("{id:032x}"),
+            rating: Rating::General,
+            score: 1,
+            tags: vec![artist.to_owned(), "sky".to_owned()],
+            width: 10,
+            height: 10,
+            preview_url: String::new(),
+            preview_width: 1,
+            preview_height: 1,
+            sample_url: String::new(),
+            file_url: "file.png".to_owned(),
+            posted_at: Some(posted_at),
+            lineage: None,
+        };
+        catalogue::store_posts(conn, &[raw], false).unwrap();
+    }
+
+    fn follow(conn: &Connection, name: &str, at: i64) {
+        conn.execute("INSERT INTO followed_artists (name, created_at) VALUES (?1, ?2)", params![name, at])
+            .unwrap();
+    }
+
+    #[test]
+    fn followed_rows_hold_each_artists_newest_posts_in_the_chosen_order() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::db::migrate(&mut conn).unwrap();
+        store(&mut conn, 1, 100, "early_bird");
+        store(&mut conn, 2, 300, "early_bird");
+        store(&mut conn, 3, 500, "night_owl");
+        store(&mut conn, 4, 900, "not_followed");
+        follow(&conn, "night_owl", 10);
+        follow(&conn, "early_bird", 20);
+        follow(&conn, "quiet_one", 30);
+        let everything = Matching::InOrder((1..=4).collect());
+        let tagged = [("early_bird".to_owned(), 1), ("early_bird".to_owned(), 2), ("night_owl".to_owned(), 3)];
+
+        let rows = |order| -> Vec<(String, Vec<i64>)> {
+            followed_rows(&conn, &everything, order, &tagged)
+                .unwrap()
+                .into_iter()
+                .map(|row| (row.artist.name, row.posts.iter().map(|post| post.id).collect()))
+                .collect()
+        };
+        let by_latest = rows(FollowedOrder::LatestPost);
+        assert_eq!(
+            by_latest,
+            [
+                ("night_owl".to_owned(), vec![3]),
+                ("early_bird".to_owned(), vec![2, 1]),
+                ("quiet_one".to_owned(), vec![]),
+            ]
+        );
+        let names = |rows: Vec<(String, Vec<i64>)>| rows.into_iter().map(|(name, _)| name).collect::<Vec<_>>();
+        assert_eq!(names(rows(FollowedOrder::RecentlyFollowed)), ["quiet_one", "early_bird", "night_owl"]);
+        assert_eq!(names(rows(FollowedOrder::Name)), ["early_bird", "night_owl", "quiet_one"]);
+
+        let listing = followed_listing(&conn, &everything, 0, &tagged).unwrap();
+        assert_eq!(listing.posts.iter().map(|post| post.id).collect::<Vec<_>>(), [3, 2, 1]);
+    }
 }

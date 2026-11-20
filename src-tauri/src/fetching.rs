@@ -92,6 +92,22 @@ async fn around(core: &Core, post_id: i64, ratings: Ratings) -> Result<Around> {
     Ok(around)
 }
 
+// each followed artist's newest page is fetched again after this long
+const FOLLOWED_STORED_FOR: i64 = 60 * 60 * 1000;
+
+// one request per followed artist whose newest page is older than FOLLOWED_STORED_FOR
+pub async fn refresh_followed(core: &Arc<Core>, chips: &[String]) -> Result<()> {
+    let ratings = Search::parse(chips).ratings();
+    let artists = library::tag_names(&core.db.conn(), TagList::FollowedArtists)?;
+    for artist in artists {
+        let query = site_query(core, vec![artist.clone()], ratings, None).await?;
+        if let Err(error) = catalogue::fetch_page(core, &query, 0, FOLLOWED_STORED_FOR).await {
+            crate::platform::log(&format!("Fetching {artist}'s newest posts failed: {error}"));
+        }
+    }
+    Ok(())
+}
+
 pub fn after_like(core: &Arc<Core>, post_id: i64, chips: Vec<String>) {
     let core = core.clone();
     spawn("after a like", async move {

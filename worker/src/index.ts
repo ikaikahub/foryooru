@@ -22,7 +22,7 @@ interface ItemRow {
 }
 
 const SITES = new Set(['gelbooru', 'danbooru']);
-const LISTS = new Set(['like', 'dislike', 'favouriteTag', 'blacklist', 'savedSearch']);
+const LISTS = new Set(['like', 'dislike', 'favouriteTag', 'blacklist', 'savedSearch', 'followedArtist']);
 const USERNAME = /^[a-z0-9_.-]{3,32}$/;
 // the app stretches the password with argon2 and sends the 32 byte result as hex
 const DERIVED_KEY = /^[0-9a-f]{64}$/;

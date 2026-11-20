@@ -40,6 +40,7 @@ const CURRENT_ITEMS: &str = "WITH current (list, key, sort_at, changed_at) AS (
     UNION ALL SELECT 'favouriteTag', name, created_at, created_at FROM favourite_tags
     UNION ALL SELECT 'blacklist', name, created_at, created_at FROM blacklist
     UNION ALL SELECT 'savedSearch', query, created_at, created_at FROM saved_searches
+    UNION ALL SELECT 'followedArtist', name, created_at, created_at FROM followed_artists
 )";
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -420,6 +421,7 @@ fn table_of(list: &str) -> Option<(&'static str, &'static str)> {
         "favouriteTag" => Some(("favourite_tags", "name")),
         "blacklist" => Some(("blacklist", "name")),
         "savedSearch" => Some(("saved_searches", "query")),
+        "followedArtist" => Some(("followed_artists", "name")),
         _ => None,
     }
 }

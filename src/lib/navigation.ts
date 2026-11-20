@@ -5,7 +5,7 @@ import { api } from '$lib/api';
 import { requestRerun } from '$lib/state/rerun.svelte';
 import { urlQuery } from '$lib/state/search.svelte';
 
-const SEARCHABLE_PAGES = new Set(['/', '/for-you', '/tiktok', '/likes', '/disliked']);
+const SEARCHABLE_PAGES = new Set(['/', '/for-you', '/tiktok', '/following', '/likes', '/disliked']);
 
 // the app's own paths leave out the base the site is served under (/foryooru on GitHub Pages)
 export function appPath(url: URL = page.url) {

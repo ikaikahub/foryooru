@@ -11,6 +11,7 @@ export const TABS: Tab[] = [
     { path: '/', emoji: '🔍', label: 'Browse', title: () => `Search ${currentSite().label}`, searches: true },
     { path: '/for-you', image: MAGIC_WAND, label: 'For you', title: () => 'Recommendations', searches: true },
     { path: '/tiktok', emoji: '📱', label: 'TikTok', title: () => 'TikTok mode', searches: true },
+    { path: '/following', emoji: '👥', label: 'Following', title: () => 'Followed artists', searches: true },
     { path: '/settings', emoji: '⚙️', label: 'Settings', title: () => 'Settings', searches: false },
     { path: '/info', emoji: 'ℹ️', label: 'Info', title: () => 'About and keybinds', searches: false },
 ];
