@@ -1,6 +1,22 @@
 <script lang="ts">
   import GroupColumns from '$lib/components/GroupColumns.svelte';
   import SettingsGroup from '$lib/components/SettingsGroup.svelte';
+  import { RELEASES_API, type Release } from '$lib/releases';
+  import { onMount } from 'svelte';
+
+  const CHANGELOG_RELEASES = 30;
+
+  let releases = $state<Release[] | null>(null);
+  let changelogError = $state(false);
+
+  onMount(() => {
+    fetch(`${RELEASES_API}?per_page=${CHANGELOG_RELEASES}`)
+      .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+      .then(
+        (found: Release[]) => (releases = found),
+        () => (changelogError = true),
+      );
+  });
 
   type Keybind = { keys: string[]; action: string };
 
@@ -58,6 +74,26 @@
   <GroupColumns>
     <SettingsGroup title="Foryooru">
       <li class="px-3 py-2.5 text-sm">Foryooru is a whatever placeholder text blah blah ill write it later</li>
+    </SettingsGroup>
+
+    <SettingsGroup title="Changelog">
+      {#if changelogError}
+        <li class="px-3 py-2.5 text-sm opacity-70">Couldn't reach GitHub to load the changelog.</li>
+      {:else if !releases}
+        <li class="px-3 py-2.5"><span class="loading loading-spinner loading-sm"></span></li>
+      {:else}
+        {#each releases as release (release.tag_name)}
+          <li class="px-3 py-2.5 text-sm">
+            <div class="flex items-baseline justify-between gap-3">
+              <span class="font-semibold">{release.tag_name}</span>
+              <span class="text-xs opacity-60">{new Date(release.published_at).toLocaleDateString()}</span>
+            </div>
+            {#if release.body?.trim()}
+              <p class="mt-1 whitespace-pre-line opacity-80">{release.body.trim()}</p>
+            {/if}
+          </li>
+        {/each}
+      {/if}
     </SettingsGroup>
 
     {#each KEYBINDS as group (group.title)}

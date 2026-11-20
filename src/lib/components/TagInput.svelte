@@ -67,6 +67,10 @@
     field?.blur();
   }
 
+  export function focus() {
+    field?.focus();
+  }
+
   export function commit() {
     const chosen = looseMatch();
     if (chosen) pick(chosen);

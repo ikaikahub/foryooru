@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { SPRING, swipeAxis } from '$lib/motion';
-  import { requestRerun } from '$lib/state/rerun.svelte';
+  import { openLayer } from '$lib/navigation';
   import { viewer } from '$lib/state/viewer.svelte';
   import { onMount } from 'svelte';
   import { Spring } from 'svelte/motion';
@@ -13,7 +13,7 @@
     let pull: { x0: number; y0: number; mode: 'pull' | 'native' | null } | null = null;
 
     function ontouchstart(e: TouchEvent) {
-      const blocked = e.touches.length !== 1 || scrollY > 0 || viewer.current !== null || page.state.searching || page.state.menuOpen;
+      const blocked = e.touches.length !== 1 || scrollY > 0 || viewer.current !== null || page.state.searching;
       pull = blocked ? null : { x0: e.touches[0].clientX, y0: e.touches[0].clientY, mode: null };
     }
 
@@ -32,7 +32,7 @@
     }
 
     function ontouchend() {
-      if (pull?.mode === 'pull' && distance.current >= PULL_THRESHOLD) requestRerun();
+      if (pull?.mode === 'pull' && distance.current >= PULL_THRESHOLD) openLayer('searching');
       pull = null;
       distance.target = 0;
     }

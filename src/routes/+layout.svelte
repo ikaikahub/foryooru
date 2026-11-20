@@ -5,8 +5,8 @@
   import { appPath } from '$lib/navigation';
   import PostMenu from '$lib/components/PostMenu.svelte';
   import PostViewer from '$lib/components/PostViewer.svelte';
-  import PullToRefresh from '$lib/components/PullToRefresh.svelte';
-  import SideMenu from '$lib/components/mobile/SideMenu.svelte';
+  import PullToSearch from '$lib/components/PullToSearch.svelte';
+  import BottomBar from '$lib/components/mobile/BottomBar.svelte';
   import TopBar from '$lib/components/mobile/TopBar.svelte';
   import SidePanels from '$lib/components/sidebar/SidePanels.svelte';
   import TagMenu from '$lib/components/TagMenu.svelte';
@@ -22,10 +22,15 @@
   import { listen } from '@tauri-apps/api/event';
   import type { SyncStatus } from '$lib/api';
   import { onMount, untrack } from 'svelte';
+  import { fade } from 'svelte/transition';
 
   let { children } = $props();
 
-  const REFRESHABLE = new Set(['/', '/for-you', '/following', '/likes', '/disliked']);
+  const PULL_PAGES = new Set(['/', '/for-you', '/following', '/likes', '/disliked']);
+  const SCROLL_EDGE_PX = 8;
+
+  let atTop = $state(true);
+  let atBottom = $state(true);
 
   rememberScroll();
   if (linuxDesktop) document.documentElement.dataset.os = 'linux';
@@ -65,6 +70,27 @@
     setTimeout(() => splash.remove(), 300);
   });
 
+  onMount(() => {
+    // capture scroll from the page and from ScrollTable's inner scroller
+    const update = (event: Event) => {
+      const target = event.target;
+      measure(target instanceof HTMLElement && target !== document.documentElement ? target : document.documentElement);
+    };
+    document.addEventListener('scroll', update, { capture: true, passive: true });
+    measure(document.documentElement);
+    return () => document.removeEventListener('scroll', update, { capture: true });
+  });
+
+  function measure(element: HTMLElement) {
+    atTop = element.scrollTop <= SCROLL_EDGE_PX;
+    atBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - SCROLL_EDGE_PX;
+  }
+
+  $effect(() => {
+    page.url;
+    untrack(() => measure(document.documentElement));
+  });
+
   function oncontextmenu(e: MouseEvent) {
     if (e.target instanceof Element && e.target.closest('img, video')) e.preventDefault();
   }
@@ -74,8 +100,8 @@
 
 {#if drawerLayout.current}
   <TopBar />
-  <SideMenu />
-  {#if REFRESHABLE.has(appPath())}<PullToRefresh />{/if}
+  <BottomBar />
+  {#if PULL_PAGES.has(appPath())}<PullToSearch />{/if}
 {/if}
 
 {#if fullScreen}
@@ -87,12 +113,26 @@
       {@render children()}
     </main>
   </div>
-  {#if !drawerLayout.current}
-    <div class="fixed right-[calc(--spacing(2)+var(--page-scrollbar))] bottom-2 z-(--z-floating) flex flex-col gap-2">
-      <button class="btn btn-circle shadow" title="Go to top" onclick={() => scrollPage('top')}>↑</button>
-      <button class="btn btn-circle shadow" title="Go to bottom" onclick={() => scrollPage('bottom')}>↓</button>
-    </div>
-  {/if}
+  <div class="pointer-events-none fixed inset-x-0 top-(--top-bar-offset) bottom-(--bottom-bar) z-(--z-floating) transition-[top] duration-150">
+    {#if !atTop}
+      <button
+        class="btn btn-sm pointer-events-auto absolute top-2 left-1/2 -translate-x-1/2"
+        title="Go to top"
+        aria-label="Go to top"
+        transition:fade={{ duration: 75 }}
+        onclick={() => scrollPage('top')}>⬆️</button
+      >
+    {/if}
+    {#if !atBottom}
+      <button
+        class="btn btn-sm pointer-events-auto absolute bottom-2 left-1/2 -translate-x-1/2"
+        title="Go to bottom"
+        aria-label="Go to bottom"
+        transition:fade={{ duration: 75 }}
+        onclick={() => scrollPage('bottom')}>⬇️</button
+      >
+    {/if}
+  </div>
 {/if}
 
 <PostViewer />

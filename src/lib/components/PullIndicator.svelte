@@ -15,10 +15,10 @@
 {#if distance > 0}
   <div
     class="pointer-events-none fixed top-(--top-bar) left-1/2 z-(--z-feed-overlay) grid size-10 place-items-center rounded-full bg-base-200 text-lg text-base-content shadow-lg"
-    style:transform="translate(-50%, {distance - 40}px) rotate({distance * 3}deg)"
+    style:transform="translate(-50%, {distance - 40}px) scale({0.7 + Math.min(1, distance / PULL_THRESHOLD) * 0.3})"
     style:opacity={Math.min(1, distance / PULL_THRESHOLD)}
     aria-hidden="true"
   >
-    <span class={ready ? 'text-primary' : 'opacity-70'}>↻</span>
+    <span class={ready ? 'text-primary' : 'opacity-70'}>🔍</span>
   </div>
 {/if}

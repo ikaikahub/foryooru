@@ -22,6 +22,7 @@
     watch,
     onloaded,
     ontags,
+    onsearch,
     target,
   }: {
     post: PostDetail;
@@ -32,6 +33,7 @@
     watch: Attachment;
     onloaded: () => void;
     ontags?: () => void;
+    onsearch?: () => void;
   } = $props();
 
   const SIDE_BUTTON = 'btn btn-circle size-12 border-white/25 bg-black/60 text-xl text-white';
@@ -72,9 +74,10 @@
   <!-- adding 0.5 rem to calc so it looks evenly cornered -->
   <ArtistBar {post} {target} class="absolute bottom-3 left-3 z-[4] max-w-[calc(100%-5rem)]" />
   <div class="absolute right-2 bottom-2 z-[4] flex flex-col gap-3">
+    {#if onsearch}<button class={SIDE_BUTTON} title="Search" onclick={onsearch}>🔍</button>{/if}
     <ReactionButtons id={post.id} class={SIDE_BUTTON} />
     {#if ontags}<button class={SIDE_BUTTON} title="Tags and info (i)" onclick={ontags}>ℹ️</button>{/if}
-    <button class={SIDE_BUTTON} title="Search for posts like this one" onclick={() => searchSimilar(post)}>🔍</button>
+    <button class={SIDE_BUTTON} title="Search for posts like this one" onclick={() => searchSimilar(post)}>🪄</button>
     <button
       class={SIDE_BUTTON}
       title="Share or save"

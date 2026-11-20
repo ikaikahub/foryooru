@@ -45,7 +45,7 @@ export function goBack(steps: number) {
 }
 
 // panels that sit over a page, each with its own history entry so Back closes it
-export type Layer = 'searching' | 'menuOpen' | 'feedInfo' | 'viewerInfo' | 'viewerTags';
+export type Layer = 'searching' | 'feedInfo' | 'viewerInfo' | 'viewerTags';
 
 // inside the viewer a layer counts towards depth, so closing the viewer also steps back over it
 export function openLayer(layer: Layer) {

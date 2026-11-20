@@ -23,6 +23,10 @@ on:
         description: Release tag (e.g. v0.1.0). Leave empty to only upload artifacts.
         type: string
         required: false
+      notes:
+        description: What changed, shown on the release and in the app's update prompt
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -179,6 +183,8 @@ jobs:
 
       # the in-app updater reads this from the latest release
       - name: Write update manifest
+        env:
+          NOTES: ${{ inputs.notes }}
         run: |
           python3 - <<'EOF'
           import datetime, json, os, pathlib, re
@@ -206,6 +212,7 @@ jobs:
               raise SystemExit(0)
           manifest = {
               'version': f'0.0.{tag[1:]}',
+              'notes': os.environ.get('NOTES', ''),
               'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'platforms': platforms,
           }
@@ -217,4 +224,5 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ steps.release_title.outputs.title }}
           target_commitish: ${{ github.sha }}
+          body: ${{ inputs.notes }}
           files: dist/*

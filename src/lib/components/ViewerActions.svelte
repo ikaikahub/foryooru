@@ -17,7 +17,7 @@
 
 {#if own}
   <ReactionButtons id={post.id} class="btn-sm" />
-  <button class={BUTTON} title="Search for posts like this one" onclick={() => searchSimilar(post)}>🔍 Similar</button>
+  <button class={BUTTON} title="Search for posts like this one" onclick={() => searchSimilar(post)}>🪄 Similar</button>
 {/if}
 <button class={BUTTON} title="Share or save" onclick={(e) => (shareAnchor = shareAnchor ? null : e.currentTarget)}>📤 Share</button>
 <PopoverMenu anchor={shareAnchor} placement="above" class="menu-md w-max" onclose={() => (shareAnchor = null)}>

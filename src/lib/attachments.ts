@@ -118,6 +118,13 @@ export function seen(post: number): Attachment {
 
 type TouchHandlers = { start: (e: TouchEvent) => void; move: (e: TouchEvent) => void; end: () => void };
 
+// stops a tap inside this element from moving focus, so a mobile keyboard stays open
+export function keepFocus(element: HTMLElement) {
+    const prevent = (event: Event) => event.preventDefault();
+    element.addEventListener('mousedown', prevent);
+    return () => element.removeEventListener('mousedown', prevent);
+}
+
 export function touchDrag(handlers: TouchHandlers): Attachment<HTMLElement> {
     return (element) => {
         const end = () => handlers.end();

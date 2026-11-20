@@ -15,6 +15,7 @@ foryooru-backup-*.zip
 training/out/
 /pool
 notes
+docs
 
 # local D1 database and wrangler state
 .wrangler

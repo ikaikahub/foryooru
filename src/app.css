@@ -191,7 +191,9 @@
 :root {
   --rail-width: 3.5rem;
   --mobile-bar-height: 3rem;
+  --mobile-nav-height: 3.5rem;
   --top-bar: 0px;
+  --top-bar-offset: var(--top-bar);
   --bottom-bar: 0px;
   --page-scrollbar: 0px;
 
@@ -203,10 +205,8 @@
   --z-drawer-backdrop: 43;
   --z-drawer: 44;
   --z-sidebar: 45;
-  --z-search: 45;
   --z-tab-bar: 46;
-  --z-nav-backdrop: 47;
-  --z-nav: 48;
+  --z-search: 47;
   --z-viewer: 50;
   --z-toast: 60;
   --z-menu-backdrop: 70;
@@ -215,6 +215,7 @@
 :root[data-layout="drawer"] {
   --rail-width: 0px;
   --top-bar: var(--mobile-bar-height);
+  --bottom-bar: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
   overscroll-behavior-y: none;
 }
 

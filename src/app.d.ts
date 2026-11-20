@@ -9,7 +9,6 @@ declare global {
             turned?: boolean;
             listPage?: number;
             searching?: boolean;
-            menuOpen?: boolean;
             feedInfo?: boolean;
             viewerInfo?: boolean;
             viewerTags?: boolean;

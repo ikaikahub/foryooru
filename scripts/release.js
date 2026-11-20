@@ -46,8 +46,26 @@ if (undoing) {
   release(currentRelease + 1);
 }
 
+// the commit messages since the newest published release, without the vN version commits
+function releaseNotes() {
+  git('fetch --tags --quiet');
+  let previous = '';
+  try {
+    previous = git('describe --tags --abbrev=0 --match v* HEAD');
+  } catch {
+    // no release yet, every commit counts
+  }
+  const messages = git(`log --no-merges --format=%s ${previous ? `${previous}..HEAD` : 'HEAD'}`)
+    .split('\n')
+    .map((message) => message.trim())
+    .filter((message) => message && !/^v\d+$/.test(message));
+  return messages.length ? messages.map((message) => `- ${message}`).join('\n') : '- Small fixes';
+}
+
 /** @param {number} number */
 function release(number) {
+  const notes = releaseNotes();
+  console.log(`notes for v${number}:\n${notes}`);
   writeFileSync(packagePath, packageText.replace(/"version": "[^"]*"/, `"version": "0.0.${number}"`));
   recordVersion();
 
@@ -59,7 +77,12 @@ function release(number) {
   git('push -u origin HEAD');
 
   // a run on the branch shares its build cache with every other release, a run on a fresh tag starts from nothing
-  gh(`workflow run build.yml --ref ${branch} -f release_tag=${tag}`, true);
+  // --json takes the inputs on stdin, so quotes and symbols in commit messages can't break the command
+  execSync(`gh workflow run build.yml --ref ${branch} --json`, {
+    input: JSON.stringify({ release_tag: tag, notes }),
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env: { ...process.env, GH_TOKEN: token },
+  });
   console.log(`started the ${tag} build on ${branch}`);
 }
 

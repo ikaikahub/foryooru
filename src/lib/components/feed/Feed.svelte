@@ -15,7 +15,7 @@
   import { signal, flushSignals } from '$lib/signals';
   import { library } from '$lib/state/library.svelte';
   import { FLICK_SPEED, SPRING, swipeAxis, swipeSpeed, trackMove, type Moves } from '$lib/motion';
-  import { onRerun, requestRerun } from '$lib/state/rerun.svelte';
+  import { onRerun } from '$lib/state/rerun.svelte';
   import { searchHref, staged, type TagTarget } from '$lib/state/search.svelte';
   import { drawerLayout, linuxDesktop } from '$lib/screen';
   import { settings } from '$lib/state/settings.svelte';
@@ -314,6 +314,10 @@
     item?.scrollIntoView({ block: 'start', behavior: 'instant' });
   }
 
+  function openSearch() {
+    openLayer('searching');
+  }
+
   let animation = 0;
   let animating = $state(false);
 
@@ -391,7 +395,7 @@
     paging = null;
     if (!swipe || swipe.mode !== 'page' || !scroller) return;
     if (pull.current > 0) {
-      if (pull.current >= PULL_THRESHOLD) requestRerun();
+      if (pull.current >= PULL_THRESHOLD) openLayer('searching');
       pull.target = 0;
       return;
     }
@@ -440,7 +444,7 @@
   <div
     bind:this={scroller}
     class={[
-      'fixed inset-x-0 top-(--top-bar) bottom-0 z-(--z-feed) touch-none overflow-y-auto overscroll-contain no-scrollbar bg-black text-white',
+      'fixed inset-x-0 top-(--top-bar) bottom-(--bottom-bar) z-(--z-feed) touch-none overflow-y-auto overscroll-contain no-scrollbar bg-black text-white',
       !touchPaging && !animating && 'snap-y snap-mandatory',
     ]}
     style:padding-left="calc(var(--rail-width) + {sidebarWidth}px)"
@@ -458,6 +462,7 @@
         watch={watch(index)}
         onloaded={() => noteLoaded(post.id)}
         ontags={drawerLayout.current ? toggleInfo : undefined}
+        onsearch={drawerLayout.current ? openSearch : undefined}
         {target}
       />
     {/each}
@@ -493,7 +498,7 @@
       <button class="fixed inset-0 z-(--z-drawer-backdrop) cursor-default bg-black" style:opacity={0.4 * info.current} aria-label="Close info" onclick={() => closeLayer('feedInfo')}
       ></button>
     {/if}
-    <div class="fixed inset-x-0 bottom-0 z-(--z-drawer) h-[65%]" style:transform="translateY({(1 - info.current) * 100}%)" bind:clientHeight={sheetHeight}>
+    <div class="fixed inset-x-0 bottom-(--bottom-bar) z-(--z-drawer) h-[65%]" style:transform="translateY({(1 - info.current) * 100}%)" bind:clientHeight={sheetHeight}>
       {#if info.current > 0}
         <InfoSheet
           post={posts[current] ?? null}
