@@ -493,14 +493,8 @@ pub fn toggle_saved_search(core: CurrentCore, query: String) -> Result<Vec<Saved
 }
 
 #[tauri::command]
-pub fn record_impressions(
-    core: CurrentCore,
-    impressions: Vec<Impression>,
-    chips: Vec<String>,
-) -> Result<()> {
-    let long_looks = impressions::record(&mut core.db.conn(), &impressions)?;
-    fetching::after_long_looks(core.inner(), long_looks, chips);
-    Ok(())
+pub fn record_impressions(core: CurrentCore, impressions: Vec<Impression>) -> Result<()> {
+    impressions::record(&mut core.db.conn(), &impressions)
 }
 
 #[tauri::command]

@@ -142,11 +142,11 @@ pub fn record_signals(conn: &Connection, signals: &[SignalEntry]) -> Result<()> 
     Ok(())
 }
 
-const LOGGED: &str = "SELECT at, kind, post_id, source, quick_skip, long_look FROM (
-         SELECT at, id, kind, post_id, source, quick_skip, long_look FROM activity
+const LOGGED: &str = "SELECT at, kind, post_id, source FROM (
+         SELECT at, id, kind, post_id, source FROM activity
          WHERE kind IN ('view', 'like', 'unlike', 'dislike', 'undislike')
          UNION ALL
-         SELECT at, id, 'engaged', post_id, NULL, 0, 0 FROM signals
+         SELECT at, id, 'engaged', post_id, NULL FROM signals
      )";
 
 fn logged_from_row(row: &Row) -> rusqlite::Result<Logged> {
@@ -168,8 +168,6 @@ fn logged_from_row(row: &Row) -> rusqlite::Result<Logged> {
             Some(name) => Some(Source::parse(&name).ok_or_else(|| unknown(3, &name))?),
             None => None,
         },
-        quick_skip: row.get(4)?,
-        long_look: row.get(5)?,
     })
 }
 

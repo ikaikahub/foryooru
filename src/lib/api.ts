@@ -147,7 +147,7 @@ export const api = {
     addTags: (list: TagList, names: string) => invoke<Tag[]>('add_tags', { list, names }),
     savedSearches: () => invoke<SavedSearch[]>('saved_searches'),
     toggleSavedSearch: (query: string) => invoke<SavedSearch[]>('toggle_saved_search', { query }),
-    recordImpressions: (impressions: Impression[], chips: string[]) => invoke<void>('record_impressions', { impressions, chips }),
+    recordImpressions: (impressions: Impression[]) => invoke<void>('record_impressions', { impressions }),
     recordSignal: (post: number, signal: Signal, tag: string | null) => invoke<void>('record_signal', { post, signal, tag }),
     recordSignals: (signals: { post: number; signal: Signal; tag: string | null }[]) =>
         invoke<void>('record_signals', { signals }),

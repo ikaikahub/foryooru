@@ -21,8 +21,6 @@ const LOVED_GENERAL: usize = 3;
 const HIT_AFFINITY: f64 = 0.5;
 const LIKE_CHANCE: f64 = 0.6;
 const DISLIKE_CHANCE: f64 = 0.4;
-const QUICK_SKIP_MS: f64 = 600.0;
-const LONG_LOOK_MS: f64 = 4_000.0;
 const SEED_LIKES: usize = 10;
 const FOR_YOU_TOP: usize = 60;
 const TRIALS: usize = 4;
@@ -138,11 +136,6 @@ impl Viewer {
         for id in ids {
             let affinity = persona.affinity(corpus, *id);
             let avoided = persona.avoids(corpus, *id);
-            let dwell = if avoided {
-                300.0
-            } else {
-                400.0 + affinity * 8_000.0
-            };
             let likes = !avoided && affinity >= HIT_AFFINITY && rng.random_bool(LIKE_CHANCE);
             let dislikes = avoided && rng.random_bool(DISLIKE_CHANCE);
             let reacted = if likes {
@@ -151,10 +144,6 @@ impl Viewer {
             } else if dislikes {
                 self.user.dislikes.insert(0, Reaction { id: *id });
                 Reacted::Disliked
-            } else if dwell <= QUICK_SKIP_MS {
-                Reacted::QuickSkip
-            } else if dwell >= LONG_LOOK_MS {
-                Reacted::LongLook
             } else {
                 Reacted::Viewed
             };
@@ -163,9 +152,6 @@ impl Viewer {
             self.remember(*id, reacted);
             if likes {
                 judged.liked.push(*id);
-            }
-            if dwell >= LONG_LOOK_MS {
-                judged.long_looks.push(*id);
             }
             outcome.shown += 1;
             outcome.hits += (affinity >= HIT_AFFINITY) as usize;
@@ -203,7 +189,6 @@ impl Viewer {
 struct Judged {
     outcome: Outcome,
     liked: Vec<i64>,
-    long_looks: Vec<i64>,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -455,7 +440,6 @@ fn run_fetched<'a>(
             for id in &judged.liked {
                 world.after_like(*id);
             }
-            world.after_long_looks(&judged.long_looks);
             world.run_pending(rng);
             judged.outcome
         })

@@ -43,12 +43,8 @@ const SESSION_PUSH_HALF: f64 = 0.25;
 // below this many likes every like is its own interest, above it likes are clustered into groups
 const PER_LIKE_BELOW: usize = 30;
 // how much each kind of session moment counts, against 1.0 for a like
-const LONG_LOOK: f64 = 0.5;
 const ENGAGED: f64 = 0.75;
 const SEARCHED: f64 = 0.75;
-const VIEWER_LONG_LOOK: f64 = 0.35;
-const VIEWER_QUICK_SKIP: f64 = 0.25;
-const QUICK_SKIP: f64 = 0.5;
 // session moments that have faded below this are ignored, along with everything older
 const MIN_RECENCY: f64 = 0.01;
 // clustered interests kept per likes and dislikes combination, so switching searches doesn't recluster
@@ -159,12 +155,8 @@ fn moment_weight(reacted: Reacted) -> f64 {
     match reacted {
         Reacted::Liked => 1.0,
         Reacted::Disliked => -DISLIKE_STRENGTH,
-        Reacted::LongLook => LONG_LOOK,
-        Reacted::QuickSkip => -QUICK_SKIP,
         Reacted::Engaged => ENGAGED,
         Reacted::Searched => SEARCHED,
-        Reacted::ViewerLongLook => VIEWER_LONG_LOOK,
-        Reacted::ViewerQuickSkip => -VIEWER_QUICK_SKIP,
         Reacted::Viewed => 0.0,
     }
 }

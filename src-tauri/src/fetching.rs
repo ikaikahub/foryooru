@@ -7,7 +7,6 @@ use crate::library::{self, TagList};
 use crate::queue::{Job, Priority};
 use crate::search::{Ratings, Search};
 use foryooru_core::fetch_plan::{self, PostTag};
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -99,28 +98,6 @@ pub fn after_like(core: &Arc<Core>, post_id: i64, chips: Vec<String>) {
         let around = around(&core, post_id, Search::parse(&chips).ratings()).await?;
         for job in around.first.into_iter().chain(around.rest) {
             core.queue.push(job, Priority::FollowUp);
-        }
-        Ok(())
-    });
-}
-
-pub fn after_long_looks(core: &Arc<Core>, posts: Vec<i64>, chips: Vec<String>) {
-    if posts.is_empty() {
-        return;
-    }
-    let core = core.clone();
-    spawn("after a long look", async move {
-        let ratings = Search::parse(&chips).ratings();
-        let mut followed = HashSet::new();
-        for post in posts {
-            let tags = tags_of(&core, post)?;
-            for tag in fetch_plan::followed_artists(&tags) {
-                if followed.insert(tag.name.clone()) {
-                    for job in target_jobs(&core, tag, ratings).await? {
-                        core.queue.push(job, Priority::FollowUp);
-                    }
-                }
-            }
         }
         Ok(())
     });

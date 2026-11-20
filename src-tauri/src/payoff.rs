@@ -43,8 +43,6 @@ struct View {
     liked: bool,
     disliked: bool,
     engaged: bool,
-    long_look: bool,
-    quick_skip: bool,
 }
 
 impl View {
@@ -63,28 +61,21 @@ impl View {
             bad(REACTION_WEIGHT)
         } else if self.engaged {
             good(ENGAGED_WEIGHT)
-        } else if self.long_look {
-            good(1.0)
-        } else if self.quick_skip {
-            bad(1.0)
         } else {
             Tally::default()
         }
     }
 }
 
-const VIEW_OUTCOME: &str = "a.long_look, a.quick_skip,
-    EXISTS (SELECT 1 FROM likes l WHERE l.post_id = a.post_id),
+const VIEW_OUTCOME: &str = "EXISTS (SELECT 1 FROM likes l WHERE l.post_id = a.post_id),
     EXISTS (SELECT 1 FROM dislikes d WHERE d.post_id = a.post_id),
     EXISTS (SELECT 1 FROM signals s WHERE s.post_id = a.post_id)";
 
 fn view_at(row: &Row, offset: usize) -> rusqlite::Result<View> {
     Ok(View {
-        long_look: row.get(offset)?,
-        quick_skip: row.get(offset + 1)?,
-        liked: row.get(offset + 2)?,
-        disliked: row.get(offset + 3)?,
-        engaged: row.get(offset + 4)?,
+        liked: row.get(offset)?,
+        disliked: row.get(offset + 1)?,
+        engaged: row.get(offset + 2)?,
     })
 }
 
@@ -178,22 +169,20 @@ mod tests {
     }
 
     #[test]
-    fn reactions_outweigh_signals_and_signals_outweigh_views() {
+    fn reactions_outweigh_signals_and_plain_views_count_for_nothing() {
         let liked = View {
             liked: true,
-            quick_skip: true,
+            engaged: true,
             ..View::default()
         };
         assert_eq!(liked.tally().good, REACTION_WEIGHT);
         let disliked = View {
             disliked: true,
-            long_look: true,
             ..View::default()
         };
         assert_eq!(disliked.tally().bad, REACTION_WEIGHT);
         let shared = View {
             engaged: true,
-            quick_skip: true,
             ..View::default()
         };
         assert_eq!(shared.tally().good, ENGAGED_WEIGHT);

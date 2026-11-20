@@ -86,18 +86,6 @@ impl<'a> Fetched<'a> {
         }
     }
 
-    pub fn after_long_looks(&mut self, ids: &[i64]) {
-        let mut followed = HashSet::new();
-        for id in ids {
-            let tags = self.post_tags(*id);
-            for tag in fetch_plan::followed_artists(&tags) {
-                if followed.insert(tag.name.clone()) {
-                    self.want_tag(tag);
-                }
-            }
-        }
-    }
-
     pub fn refill(&mut self, leads: Leads, likes: usize, rng: &mut StdRng) {
         let tags = fetch_plan::lead_tags(leads, likes, rng);
         if tags.is_empty() {

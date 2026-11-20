@@ -7,9 +7,7 @@
     { signal: '❤️ Like', effect: '+1', note: "Will show more posts like it" },
     { signal: '💔 Dislike', effect: '−0.5', note: "Will show less posts like it" },
     { signal: '👁️ Opened in the viewer', effect: '+0.3', note: 'Counted up to twice per post' },
-    { signal: '⏳ Long look (TikTok)', effect: '+0.15', note: 'View time longer than 80% of all views and at least 2s' },
-    { signal: '⏭️ Quick skip (TikTok)', effect: '−0.1', note: 'View time shorter than 80% of all views and shorter than 1.5s. Views under 0.4s do not count at all, not even as seen' },
-    { signal: '🔁 Seen (grid or TikTok)', effect: '×0.7', note: "Once per post, doesn't affect interests but will be less likely to show it again" },
+    { signal: '🔁 Seen (grid or TikTok)', effect: '×0.7', note: "Once per post, doesn't affect interests but will be less likely to show it again. TikTok views under 0.4s don't count" },
     { signal: '🚫 Blacklisted tag', effect: 'hidden', note: "Hides a post" },
   ];
 </script>

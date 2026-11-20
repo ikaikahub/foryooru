@@ -40,23 +40,12 @@ pub enum Reacted {
     Disliked,
     Engaged,
     Searched,
-    LongLook,
-    QuickSkip,
-    ViewerLongLook,
-    ViewerQuickSkip,
     Viewed,
 }
 
 impl Reacted {
     pub fn is_view(self) -> bool {
-        matches!(
-            self,
-            Reacted::LongLook
-                | Reacted::QuickSkip
-                | Reacted::ViewerLongLook
-                | Reacted::ViewerQuickSkip
-                | Reacted::Viewed
-        )
+        matches!(self, Reacted::Viewed)
     }
 }
 
@@ -101,8 +90,6 @@ pub struct Logged {
     pub happened: Happened,
     pub post: i64,
     pub source: Option<Source>,
-    pub quick_skip: bool,
-    pub long_look: bool,
 }
 
 impl Logged {
@@ -139,12 +126,7 @@ pub fn moments<'a>(
             return moments;
         }
         later = logged.at;
-        let viewer = logged.source == Some(Source::Viewer);
         let reacted = match logged.happened {
-            Happened::View if logged.long_look && viewer => Reacted::ViewerLongLook,
-            Happened::View if logged.quick_skip && viewer => Reacted::ViewerQuickSkip,
-            Happened::View if logged.long_look => Reacted::LongLook,
-            Happened::View if logged.quick_skip => Reacted::QuickSkip,
             Happened::View => Reacted::Viewed,
             Happened::Engaged => Reacted::Engaged,
             _ if !settled.insert(logged.post) => continue,

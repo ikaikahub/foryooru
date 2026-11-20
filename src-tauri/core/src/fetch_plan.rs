@@ -75,11 +75,6 @@ pub fn targets(tags: &[PostTag]) -> Vec<&PostTag> {
         .collect()
 }
 
-pub fn followed_artists(tags: &[PostTag]) -> impl Iterator<Item = &PostTag> {
-    tags.iter()
-        .filter(|tag| tag.kind == Some(TagKind::Artist) && tag.under_fetched())
-}
-
 pub fn lead_tags(leads: Leads, likes: usize, rng: &mut impl Rng) -> Vec<String> {
     let mut discovery: Vec<String> = leads.neighbour.into_iter().collect();
     let mut taste: Vec<String> = leads.taste.into_iter().collect();

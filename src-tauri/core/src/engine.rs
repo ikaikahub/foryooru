@@ -13,12 +13,10 @@ const UNDATED_AGE_DAYS: f64 = 365.0;
 const DAY_MS: f64 = 86_400_000.0;
 // refill searches go to tags next to your taste at least this often, however many likes you have
 const MIN_DISCOVERY: f64 = 1.0 / 3.0;
-// how much each kind of impression adds to a post's implicit score; opens count at most twice
-const LONG_VIEW: f64 = 0.15;
+// how much opening a post in the viewer adds to its implicit score; opens count at most twice.
+// view time was left out: replaying real history ranked liked posts higher without it
 const OPEN: f64 = 0.3;
-const QUICK_SKIP: f64 = -0.1;
-// the lowest and highest implicit score one post can reach
-const IMPLICIT_RANGE: (f64, f64) = (-0.3, 0.6);
+const MAX_OPENS: i64 = 2;
 // a post's implicit score halves after this many days
 const IMPRESSION_HALF_LIFE_DAYS: f64 = 3.0;
 // impressions reach half of IMPRESSION_CAP once this many posts have them
@@ -134,12 +132,8 @@ pub fn interleave(ranked: Vec<i64>, picks: Vec<i64>, fraction: f64) -> Vec<(i64,
     }
 }
 
-pub fn implicit_score(long_views: i64, opens: i64, quick_skips: i64, age_days: f64) -> f64 {
-    let raw = LONG_VIEW * long_views as f64
-        + OPEN * opens.min(2) as f64
-        + QUICK_SKIP * quick_skips as f64;
-    raw.clamp(IMPLICIT_RANGE.0, IMPLICIT_RANGE.1)
-        * 0.5_f64.powf(age_days.max(0.0) / IMPRESSION_HALF_LIFE_DAYS)
+pub fn implicit_score(opens: i64, age_days: f64) -> f64 {
+    OPEN * opens.clamp(0, MAX_OPENS) as f64 * 0.5_f64.powf(age_days.max(0.0) / IMPRESSION_HALF_LIFE_DAYS)
 }
 
 pub fn impression_share(active: usize, cap: f64) -> f64 {

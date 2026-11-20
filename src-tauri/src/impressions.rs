@@ -50,11 +50,11 @@ fn thresholds(conn: &Connection, source: Source) -> Result<(i64, i64)> {
     ))
 }
 
-pub fn record(conn: &mut Connection, impressions: &[Impression]) -> Result<Vec<i64>> {
+// quick skips and long looks are still recorded so the activity page can show them, but nothing ranks by them
+pub fn record(conn: &mut Connection, impressions: &[Impression]) -> Result<()> {
     let feed_thresholds = thresholds(conn, Source::Feed)?;
     let viewer_thresholds = thresholds(conn, Source::Viewer)?;
     let now = now_ms();
-    let mut long_looks = Vec::new();
     let tx = conn.transaction()?;
     {
         let mut upsert = tx.prepare_cached(
@@ -104,20 +104,17 @@ pub fn record(conn: &mut Connection, impressions: &[Impression]) -> Result<Vec<i
                 if impression.opened {
                     activity::record_signal(&tx, impression.post, activity::Signal::Opened, None)?;
                 }
-                if long {
-                    long_looks.push(impression.post);
-                }
             }
         }
     }
     tx.commit()?;
-    Ok(long_looks)
+    Ok(())
 }
 
 pub fn read_signals(conn: &Connection, reacted: &HashSet<i64>) -> Result<Signals> {
     let now = now_ms();
     let mut statement = conn.prepare_cached(
-        "SELECT post_id, views, quick_skips, long_views, opens, last_seen FROM impressions",
+        "SELECT post_id, views, opens, last_seen FROM impressions",
     )?;
     let mut signals = Signals::default();
     let rows = statement.query_map([], |row| {
@@ -125,20 +122,18 @@ pub fn read_signals(conn: &Connection, reacted: &HashSet<i64>) -> Result<Signals
             row.get::<_, i64>(0)?,
             row.get(1)?,
             row.get(2)?,
-            row.get(3)?,
-            row.get(4)?,
-            row.get::<_, i64>(5)?,
+            row.get::<_, i64>(3)?,
         ))
     })?;
     for row in rows {
-        let (id, views, quick_skips, long_views, opens, last_seen) = row?;
+        let (id, views, opens, last_seen) = row?;
         let age_days = (now - last_seen) as f64 / 86_400_000.0;
         signals.views.insert(id, views);
         if age_days <= ACTIVE_DAYS {
             signals.active += 1;
         }
         if !reacted.contains(&id) {
-            let score = implicit_score(long_views, opens, quick_skips, age_days);
+            let score = implicit_score(opens, age_days);
             if score != 0.0 {
                 signals.scores.insert(id, score);
             }
