@@ -1,10 +1,9 @@
 use crate::fetched::Fetched;
 use crate::pool::Pool;
-use foryooru_core::activity::{Happened, Logged, Moment, Reacted, SESSION_EVENTS, Source, Subject};
+use foryooru_core::activity::{Moment, Reacted, SESSION_EVENTS, Subject};
 use foryooru_core::corpus::Corpus;
 use foryooru_core::feed::{self, FeedOptions, Scrolled};
 use foryooru_core::kinds::TagKind;
-use foryooru_core::model::{Context, Liked, Model, learn_preference};
 use foryooru_core::now_ms;
 use foryooru_core::recommend::{self, Reaction, UserData};
 use foryooru_core::search::Search;
@@ -96,7 +95,6 @@ impl Persona {
 
 struct Viewer {
     user: UserData,
-    model: Model,
     seen: HashSet<i64>,
     since: i64,
 }
@@ -112,7 +110,6 @@ impl Viewer {
                 payoff: Default::default(),
                 session: Vec::new(),
             },
-            model: Model::fresh(),
             seen: HashSet::new(),
             since: now_ms(),
         }
@@ -138,13 +135,7 @@ impl Viewer {
     ) -> Judged {
         let mut judged = Judged::default();
         let outcome = &mut judged.outcome;
-        let found = recommend::interests(corpus, &self.user);
-        let liked = Liked::new(corpus, &self.user, &found);
-        let features: Vec<Option<Vec<f64>>> = {
-            let context = Context::new(corpus, &liked, &self.user.session);
-            ids.iter().map(|id| context.features(*id)).collect()
-        };
-        for (id, features) in ids.iter().zip(features) {
+        for id in ids {
             let affinity = persona.affinity(corpus, *id);
             let avoided = persona.avoids(corpus, *id);
             let dwell = if avoided {
@@ -167,37 +158,6 @@ impl Viewer {
             } else {
                 Reacted::Viewed
             };
-            if let Some(features) = features {
-                let engaged = likes || dwell >= LONG_LOOK_MS;
-                let judged = likes || dislikes || dwell <= QUICK_SKIP_MS || dwell >= LONG_LOOK_MS;
-                if judged {
-                    self.model.study(
-                        &features,
-                        engaged,
-                        if likes || dislikes { 3.0 } else { 1.0 },
-                    );
-                }
-            }
-            let view = Logged {
-                at: 0,
-                happened: Happened::View,
-                post: *id,
-                source: Some(Source::Feed),
-                quick_skip: dwell <= QUICK_SKIP_MS,
-                long_look: dwell >= LONG_LOOK_MS,
-            };
-            learn_preference(&mut self.model.tags, corpus, &view);
-            if likes || dislikes {
-                let reaction = Logged {
-                    happened: if likes {
-                        Happened::Like
-                    } else {
-                        Happened::Dislike
-                    },
-                    ..view
-                };
-                learn_preference(&mut self.model.tags, corpus, &reaction);
-            }
             *self.user.signals.views.entry(*id).or_default() += 1;
             self.seen.insert(*id);
             self.remember(*id, reacted);
@@ -235,7 +195,6 @@ impl Viewer {
                 similar_per_artist: None,
                 discover,
             },
-            &self.model,
         )
     }
 }
@@ -402,7 +361,6 @@ fn for_you_precision(corpus: &Corpus, persona: &Persona, viewer: &Viewer) -> f64
         &Search::parse(&[]),
         false,
         false,
-        &viewer.model,
     );
     let top: Vec<i64> = ranked.iter().take(FOR_YOU_TOP).map(|(id, _)| *id).collect();
     top.iter()
@@ -889,11 +847,10 @@ fn simulate_persona(
     );
     let _ = writeln!(
         section,
-        "  first hit in batch {}; likes {}; For You precision@{FOR_YOU_TOP} afterwards {:.0}%; model {}",
+        "  first hit in batch {}; likes {}; For You precision@{FOR_YOU_TOP} afterwards {:.0}%",
         first_hit.map_or("never".to_owned(), |batch| (batch + 1).to_string()),
         cold.user.likes.len(),
         for_you_precision(&pool.corpus, persona, &cold) * 100.0,
-        serde_json::to_string(&cold.model.status()).unwrap_or_default(),
     );
 
     let mut warm = Viewer::new();

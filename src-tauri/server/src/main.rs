@@ -1,6 +1,7 @@
 mod error;
 mod fetched;
 mod pool;
+mod replay;
 mod simulate;
 mod snapshot;
 
@@ -97,7 +98,6 @@ async fn for_you(
             &Search::parse(&request.chips),
             request.hide_liked,
             request.discover,
-            &request.model,
         )
         .into_iter()
         .filter(|(id, _)| !shown.contains(id))
@@ -129,7 +129,6 @@ async fn feed_next(
                 session_likes: &request.session_likes,
             },
             request.options,
-            &request.model,
         );
         Json(FeedResponse {
             posts: pool.served_all(&batch.ids),
@@ -200,6 +199,13 @@ fn main() -> Result<()> {
             let batches: usize = batches.parse().map_err(|_| Error::Usage)?;
             let pool = Pool::load(Path::new(snapshot))?;
             std::fs::write(report, simulate::run(&pool, personas, batches))?;
+            Ok(())
+        }
+        [command, snapshot, reactions, report] if command == "replay" => {
+            let reactions: replay::Reactions =
+                serde_json::from_str(&std::fs::read_to_string(reactions)?).map_err(std::io::Error::other)?;
+            let pool = Pool::load(Path::new(snapshot))?;
+            std::fs::write(report, replay::run(&pool.corpus, &reactions))?;
             Ok(())
         }
         _ => Err(Error::Usage),

@@ -21,6 +21,8 @@ use std::sync::Mutex;
 pub const RANKING_LIMIT: usize = 2000;
 // posts per artist allowed on one page, so one artist can't fill it
 pub const MAX_PER_ARTIST: usize = 3;
+// share of the score each further For you post by the same artist keeps, so new artists get through
+const ARTIST_REPEAT_KEPT: f64 = 0.8;
 // the most of the ranking that impressions (looks and skips, not likes) can steer
 pub const IMPRESSION_CAP: f64 = 0.30;
 // how strongly "similar:-id" chips push away, against 1.0 for the posts searched towards
@@ -582,6 +584,7 @@ pub fn for_you(
                 &mask,
                 RANKING_LIMIT,
                 MAX_PER_ARTIST,
+                ARTIST_REPEAT_KEPT,
                 &adjust,
             );
             match &liked {
@@ -619,6 +622,7 @@ pub fn similar(
         &mask,
         limit,
         cap,
+        1.0,
         &Adjust {
             posts: sort_lean(corpus, search, &mask),
         },

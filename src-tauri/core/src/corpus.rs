@@ -780,7 +780,7 @@ impl Corpus {
             .collect()
     }
 
-    fn best(&self, scored: &Scored, count: usize) -> Vec<usize> {
+    fn best(&self, scored: &Scored, count: usize) -> Scored {
         let mut rows = scored.clone();
         let order = |a: &(usize, f64), b: &(usize, f64)| {
             b.1.total_cmp(&a.1).then(self.ids[a.0].cmp(&self.ids[b.0]))
@@ -791,7 +791,33 @@ impl Corpus {
         }
         rows.par_sort_unstable_by(order);
         rows.truncate(count);
-        rows.into_iter().map(|(row, _)| row).collect()
+        rows
+    }
+
+    // each further post by the same artist keeps repeat_kept of its score, so the artists already ranked highest
+    // make room for similar posts by others. 1.0 leaves the order as scored
+    fn spread_artists(&self, best: Scored, repeat_kept: f64) -> Vec<usize> {
+        if repeat_kept >= 1.0 {
+            return best.into_iter().map(|(row, _)| row).collect();
+        }
+        let mut placed: HashMap<i64, i32> = HashMap::new();
+        let mut spread: Scored = best
+            .into_iter()
+            .map(|(row, score)| {
+                let artists = self.artists_of_row(row);
+                let earlier = artists
+                    .iter()
+                    .map(|artist| placed.get(artist).copied().unwrap_or(0))
+                    .max()
+                    .unwrap_or(0);
+                for artist in artists {
+                    *placed.entry(artist).or_default() += 1;
+                }
+                (row, score * repeat_kept.powi(earlier))
+            })
+            .collect();
+        spread.sort_by(|a, b| b.1.total_cmp(&a.1).then(self.ids[a.0].cmp(&self.ids[b.0])));
+        spread.into_iter().map(|(row, _)| row).collect()
     }
 
     pub fn score_level_of_row(&self, row: usize) -> f64 {
@@ -809,7 +835,7 @@ impl Corpus {
         let scored = self.scored(taste, mask, adjust);
         let mut counts: HashMap<i64, usize> = HashMap::new();
         let mut results = Vec::with_capacity(count);
-        for row in self.best(&scored, count * 4) {
+        for (row, _) in self.best(&scored, count * 4) {
             let artists = self.artists_of_row(row);
             if artists
                 .iter()
@@ -834,9 +860,10 @@ impl Corpus {
         mask: &Mask,
         limit: usize,
         cap: usize,
+        repeat_kept: f64,
         adjust: &Adjust,
     ) -> Vec<i64> {
-        self.rank_scored(&self.scored(taste, mask, adjust), limit, cap)
+        self.rank_scored(&self.scored(taste, mask, adjust), limit, cap, repeat_kept)
     }
 
     pub fn rank_popular(&self, mask: &Mask, limit: usize, cap: usize, adjust: &Adjust) -> Vec<i64> {
@@ -849,14 +876,14 @@ impl Corpus {
             })
             .filter(|(_, score)| *score > 0.0)
             .collect();
-        self.rank_scored(&scored, limit, cap)
+        self.rank_scored(&scored, limit, cap, 1.0)
     }
 
-    fn rank_scored(&self, scored: &Scored, limit: usize, cap: usize) -> Vec<i64> {
+    fn rank_scored(&self, scored: &Scored, limit: usize, cap: usize, repeat_kept: f64) -> Vec<i64> {
         let positive = scored.len();
         let mut count = limit * 2;
         loop {
-            let rows = self.best(scored, count);
+            let rows = self.spread_artists(self.best(scored, count), repeat_kept);
             let (ordered, complete) =
                 diversify_prefix(&rows, |row| self.artists_of_row(row), cap, PAGE_SIZE, limit);
             if complete || count >= positive {
@@ -864,5 +891,54 @@ impl Corpus {
             }
             count *= 4;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn post(id: i64, tags: Vec<i64>) -> NewPost {
+        NewPost {
+            id,
+            rating: Rating::General,
+            score: 1,
+            md5: format!("{id:032x}"),
+            posted_at: None,
+            media: Media::Image,
+            tags,
+        }
+    }
+
+    #[test]
+    fn repeat_posts_by_an_artist_make_room_for_others() {
+        let (known, new, sky) = (1, 2, 3);
+        let tag = |name: &str, kind| TagInfo {
+            name: name.to_owned(),
+            kind: Some(kind),
+            count: Some(10),
+        };
+        let mut corpus = Corpus::new();
+        corpus.set_tags(
+            1_000_000.0,
+            [
+                (known, tag("known_artist", TagKind::Artist)),
+                (new, tag("new_artist", TagKind::Artist)),
+                (sky, tag("sky", TagKind::General)),
+            ],
+        );
+        corpus.append(vec![
+            post(10, vec![known, sky]),
+            post(11, vec![known, sky]),
+            post(12, vec![known, sky]),
+            post(20, vec![new, sky]),
+        ]);
+        let row = |id| corpus.row_of(id).unwrap();
+        let best = vec![(row(10), 1.0), (row(11), 0.95), (row(12), 0.9), (row(20), 0.85)];
+
+        let ids = |rows: Vec<usize>| -> Vec<i64> { rows.into_iter().map(|row| corpus.ids[row]).collect() };
+        assert_eq!(ids(corpus.spread_artists(best.clone(), 1.0)), [10, 11, 12, 20]);
+        // the known artist's 2nd post keeps 0.76 and its 3rd 0.58, so the new artist's 0.85 moves up to second
+        assert_eq!(ids(corpus.spread_artists(best, 0.8)), [10, 20, 11, 12]);
     }
 }
