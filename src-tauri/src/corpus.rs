@@ -5,11 +5,14 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub use foryooru_core::corpus::*;
 use foryooru_core::kinds::{TagKind, media_of};
 
 const FALLBACK_SITE_TOTAL: f64 = 14_000_000.0;
+// tag details arrive after nearly every page, so their corrected weights are batched into one rebuild this often
+const REBUILD_INTERVAL: Duration = Duration::from_secs(120);
 
 #[derive(Clone)]
 struct Loaded {
@@ -69,10 +72,17 @@ fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64>
     };
     load_tags(conn, corpus)?;
     let mut links: HashMap<i64, Vec<i64>> = HashMap::with_capacity(rows.len());
-    let mut statement = conn.prepare(
-        "SELECT pt.post_id, pt.tag_id FROM post_tags pt JOIN posts p ON p.id = pt.post_id WHERE p.seq > ?1",
-    )?;
-    for link in statement.query_map([after_seq], |row| {
+    // a full build wants every link, and skipping the join halves the read
+    let (sql, params): (&str, &[&dyn rusqlite::ToSql]) = if after_seq == 0 {
+        ("SELECT post_id, tag_id FROM post_tags", &[])
+    } else {
+        (
+            "SELECT pt.post_id, pt.tag_id FROM post_tags pt JOIN posts p ON p.id = pt.post_id WHERE p.seq > ?1",
+            &[&after_seq],
+        )
+    };
+    let mut statement = conn.prepare(sql)?;
+    for link in statement.query_map(params, |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
     })? {
         let (post, tag) = link?;
@@ -103,6 +113,7 @@ pub struct CorpusCache {
     current: Mutex<Option<Loaded>>,
     stale: AtomicBool,
     rebuilding: Arc<AtomicBool>,
+    last_build: Mutex<Option<Instant>>,
 }
 
 impl CorpusCache {
@@ -129,7 +140,13 @@ impl CorpusCache {
                     row.get(0)
                 })?;
             match current.as_mut() {
-                None => *current = Some(build(&conn)?),
+                None => {
+                    *current = Some(build(&conn)?);
+                    *self
+                        .last_build
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Instant::now());
+                }
                 Some(loaded) if latest_seq > loaded.max_seq => {
                     loaded.max_seq =
                         append(&conn, Arc::make_mut(&mut loaded.corpus), loaded.max_seq)?
@@ -140,10 +157,24 @@ impl CorpusCache {
                 .as_ref()
                 .map_or_else(|| Arc::new(Corpus::new()), |loaded| loaded.corpus.clone())
         };
-        if self.stale.load(Ordering::SeqCst) && !self.rebuilding.swap(true, Ordering::SeqCst) {
+        let rebuild_due = {
+            let mut last_build = self
+                .last_build
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let due = self.stale.load(Ordering::SeqCst)
+                && last_build.is_none_or(|built| built.elapsed() >= REBUILD_INTERVAL)
+                && !self.rebuilding.swap(true, Ordering::SeqCst);
+            if due {
+                *last_build = Some(Instant::now());
+            }
+            due
+        };
+        if rebuild_due {
             self.stale.store(false, Ordering::SeqCst);
             let (cache, db) = (self.clone(), db.clone());
-            crate::platform::spawn(async move {
+            // the rebuild is plain CPU and database work, which would stall an async worker thread
+            tauri::async_runtime::spawn_blocking(move || {
                 let started = crate::timing::now();
                 match db.connect().and_then(|conn| build(&conn)) {
                     Ok(fresh) => {
