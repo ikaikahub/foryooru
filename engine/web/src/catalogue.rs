@@ -270,12 +270,24 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
         retagged: false,
     };
     let mut changed = Vec::new();
+    let ids = serde_json::to_string(&raws.iter().map(|raw| raw.id).collect::<Vec<_>>())?;
     let rows_started = timing::now();
     {
-        let mut exists = tx.prepare_cached("SELECT 1 FROM posts WHERE id = ?1")?;
-        let mut linked = tx.prepare_cached(
-            "SELECT t.name FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.post_id = ?1",
-        )?;
+        let known: HashSet<i64> = tx
+            .prepare_cached("SELECT id FROM posts WHERE id IN (SELECT value FROM json_each(?1))")?
+            .query_map([&ids], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut linked: HashMap<i64, HashSet<String>> = HashMap::new();
+        if !known.is_empty() {
+            let mut statement = tx.prepare_cached(
+                "SELECT pt.post_id, t.name FROM post_tags pt JOIN tags t ON t.id = pt.tag_id
+                 WHERE pt.post_id IN (SELECT value FROM json_each(?1))",
+            )?;
+            for row in statement.query_map([&ids], |row| Ok((row.get(0)?, row.get(1)?)))? {
+                let (post_id, name): (i64, String) = row?;
+                linked.entry(post_id).or_default().insert(name);
+            }
+        }
         let mut upsert = tx.prepare_cached(
             "INSERT INTO posts (id, seq, md5, rating, score, width, height, preview_url, preview_width,
                                 preview_height, sample_url, file_url, posted_at, partial, parent_id, has_children)
@@ -289,9 +301,9 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
                 has_children = COALESCE(excluded.has_children, has_children)",
         )?;
         for raw in raws {
-            let known = exists.exists([raw.id])?;
+            let is_known = known.contains(&raw.id);
             stored.ids.push(raw.id);
-            if partial && known {
+            if partial && is_known {
                 continue;
             }
             upsert.execute(params![
@@ -317,15 +329,12 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
                 .filter(|name| name.len() <= 255)
                 .cloned()
                 .collect();
-            let current = if known {
-                linked
-                    .query_map([raw.id], |row| row.get(0))?
-                    .collect::<rusqlite::Result<HashSet<String>>>()?
-            } else {
-                HashSet::new()
-            };
-            if !known || current != names {
-                stored.retagged |= known;
+            let unchanged = is_known
+                && linked
+                    .get(&raw.id)
+                    .map_or(names.is_empty(), |current| current == &names);
+            if !unchanged {
+                stored.retagged |= is_known;
                 changed.push((raw.id, names));
             }
         }
@@ -337,30 +346,51 @@ fn store_posts_in(tx: &Transaction, raws: &[RawPost], partial: bool) -> Result<S
     Ok(stored)
 }
 
+// rewrites the tags of every changed post in a handful of statements rather than one per tag
 fn link_tags(tx: &Transaction, posts: &[(i64, HashSet<String>)]) -> Result<bool> {
     if posts.is_empty() {
         return Ok(false);
     }
-    let mut affected: HashSet<i64> = HashSet::new();
-    let mut new_tags = false;
-    let mut old_links = tx.prepare_cached("SELECT tag_id FROM post_tags WHERE post_id = ?1")?;
-    let mut unlink = tx.prepare_cached("DELETE FROM post_tags WHERE post_id = ?1")?;
-    let mut add_tag = tx.prepare_cached("INSERT OR IGNORE INTO tags (name) VALUES (?1)")?;
-    let mut tag_id = tx.prepare_cached("SELECT id FROM tags WHERE name = ?1")?;
-    let mut link =
-        tx.prepare_cached("INSERT OR IGNORE INTO post_tags (post_id, tag_id) VALUES (?1, ?2)")?;
-    for (post_id, names) in posts {
-        for old in old_links.query_map([post_id], |row| row.get(0))? {
-            affected.insert(old?);
-        }
-        unlink.execute([post_id])?;
-        for name in names {
-            new_tags |= add_tag.execute([name])? > 0;
-            let id: i64 = tag_id.query_row([name], |row| row.get(0))?;
-            link.execute([post_id, &id])?;
-            affected.insert(id);
-        }
-    }
+    let ids = serde_json::to_string(&posts.iter().map(|(post_id, _)| *post_id).collect::<Vec<_>>())?;
+    let mut affected: HashSet<i64> = tx
+        .prepare_cached(
+            "SELECT DISTINCT tag_id FROM post_tags WHERE post_id IN (SELECT value FROM json_each(?1))",
+        )?
+        .query_map([&ids], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    tx.execute(
+        "DELETE FROM post_tags WHERE post_id IN (SELECT value FROM json_each(?1))",
+        [&ids],
+    )?;
+
+    let mut names: Vec<&str> = posts
+        .iter()
+        .flat_map(|(_, names)| names.iter().map(String::as_str))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    let names = serde_json::to_string(&names)?;
+    let new_tags = tx.execute(
+        "INSERT OR IGNORE INTO tags (name) SELECT value FROM json_each(?1)",
+        [&names],
+    )? > 0;
+
+    let pairs: Vec<(i64, &str)> = posts
+        .iter()
+        .flat_map(|(post_id, names)| names.iter().map(move |name| (*post_id, name.as_str())))
+        .collect();
+    tx.execute(
+        "INSERT OR IGNORE INTO post_tags (post_id, tag_id)
+         SELECT p.value ->> 0, t.id FROM json_each(?1) p JOIN tags t ON t.name = (p.value ->> 1)",
+        [serde_json::to_string(&pairs)?],
+    )?;
+
+    let new_ids: Vec<i64> = tx
+        .prepare_cached("SELECT t.id FROM json_each(?1) j JOIN tags t ON t.name = j.value")?
+        .query_map([&names], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    affected.extend(new_ids);
+
     tx.execute(
         "UPDATE tags SET post_count = (SELECT COUNT(*) FROM post_tags WHERE tag_id = tags.id)
          WHERE id IN (SELECT value FROM json_each(?1))",
