@@ -10,6 +10,9 @@ declare global {
             listPage?: number;
             searching?: boolean;
             menuOpen?: boolean;
+            feedInfo?: boolean;
+            viewerInfo?: boolean;
+            viewerTags?: boolean;
         }
     }
 }

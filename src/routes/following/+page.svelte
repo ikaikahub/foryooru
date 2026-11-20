@@ -6,6 +6,7 @@
   import ErrorNote from '$lib/components/ErrorNote.svelte';
   import ReactedPosts from '$lib/components/ReactedPosts.svelte';
   import SelectMenu from '$lib/components/SelectMenu.svelte';
+  import { setParams } from '$lib/navigation';
   import { library } from '$lib/state/library.svelte';
   import { onRerun } from '$lib/state/rerun.svelte';
   import { searchHref, splitQuery, urlQuery } from '$lib/state/search.svelte';
@@ -19,7 +20,8 @@
   ];
 
   let order = $state<FollowedOrder>('latestPost');
-  let viewAll = $state(false);
+  // in the address so Back returns to the rows
+  const viewAll = $derived(page.url.searchParams.get('view') === 'all');
   let rows = $state<ArtistRow[] | null>(null);
   let error = $state<unknown>(null);
   let refreshing = $state(false);
@@ -67,7 +69,7 @@
   {#if !viewAll}
     <SelectMenu bind:value={order} options={ORDERS} buttonClass="btn-sm" alignEnd title="Sort artists" />
   {/if}
-  <button class={['btn btn-sm', viewAll && 'btn-primary']} aria-pressed={viewAll} onclick={() => (viewAll = !viewAll)}>
+  <button class={['btn btn-sm', viewAll && 'btn-primary']} aria-pressed={viewAll} onclick={() => setParams({ view: viewAll ? null : 'all', page: null })}>
     {viewAll ? 'By artist' : 'View all'}
   </button>
 </div>
@@ -75,7 +77,13 @@
 {#if error}<ErrorNote {error} />{/if}
 
 {#if viewAll}
-  <ReactedPosts title="" emptyMessage="No posts from the artists you follow yet." load={api.followedPosts} />
+  <ReactedPosts
+    title=""
+    emptyMessage={chips.length
+      ? `None of their posts match your search: ${chips.join(' ')}`
+      : 'No posts from the artists you follow yet.'}
+    load={api.followedPosts}
+  />
 {:else if rows && !rows.length}
   <p class="opacity-70">Follow artists from the viewer or TikTok to see their newest posts here.</p>
 {:else if rows}
@@ -101,7 +109,15 @@
             {/each}
           </div>
         {:else}
-          <p class="text-sm opacity-60">{refreshing ? 'Looking for posts…' : 'No posts stored for this artist yet.'}</p>
+          <p class="text-sm opacity-60">
+            {#if refreshing}
+              Looking for posts…
+            {:else if chips.length}
+              None of their posts match your search: {chips.join(' ')}
+            {:else}
+              No posts stored for this artist yet.
+            {/if}
+          </p>
         {/if}
       </section>
     {/each}

@@ -44,11 +44,17 @@ export function goBack(steps: number) {
     });
 }
 
-export function openLayer(layer: 'searching' | 'menuOpen') {
-    if (!page.state[layer]) pushState('', { ...page.state, [layer]: true });
+// panels that sit over a page, each with its own history entry so Back closes it
+export type Layer = 'searching' | 'menuOpen' | 'feedInfo' | 'viewerInfo' | 'viewerTags';
+
+// inside the viewer a layer counts towards depth, so closing the viewer also steps back over it
+export function openLayer(layer: Layer) {
+    if (page.state[layer]) return;
+    const depth = page.state.depth === undefined ? undefined : page.state.depth + 1;
+    pushState('', { ...page.state, [layer]: true, depth });
 }
 
-export function closeLayer(layer: 'searching' | 'menuOpen') {
+export function closeLayer(layer: Layer) {
     return page.state[layer] ? goBack(1) : Promise.resolve();
 }
 
@@ -56,8 +62,18 @@ export function pageNumber(url: URL) {
     return Math.max(1, Number(url.searchParams.get('page')) || 1);
 }
 
-export function hrefWith(url: URL, params: Record<string, string | number>) {
+// null removes a param
+export function hrefWith(url: URL, params: Record<string, string | number | null>) {
     const target = new URL(url);
-    for (const [key, value] of Object.entries(params)) target.searchParams.set(key, String(value));
+    for (const [key, value] of Object.entries(params)) {
+        if (value === null) target.searchParams.delete(key);
+        else target.searchParams.set(key, String(value));
+    }
     return target.pathname + target.search;
+}
+
+// anything Back should undo goes through here, so it lives in the address and gets a history entry.
+// replace is for changes Back should skip over
+export function setParams(params: Record<string, string | number | null>, { replace = false } = {}) {
+    return goto(hrefWith(page.url, params), { replaceState: replace, noScroll: true, keepFocus: true });
 }

@@ -1,8 +1,12 @@
 <script lang="ts">
   import type { PostDetail } from '$lib/api';
+  import { signal } from '$lib/signals';
   import { library } from '$lib/state/library.svelte';
+  import type { TagTarget } from '$lib/state/search.svelte';
+  import { tagMenu } from '$lib/state/tagMenu.svelte';
+  import { tagText } from '$lib/tags';
 
-  let { post, class: className = '' }: { post: PostDetail; class?: string } = $props();
+  let { post, target, class: className = '' }: { post: PostDetail; target: TagTarget; class?: string } = $props();
 
   let expanded = $state(false);
   const artists = $derived(post.tagGroups.find((group) => group.label === 'Artist')?.tags ?? []);
@@ -29,7 +33,17 @@
   <div class={['flex flex-col gap-1 text-sm text-white', className]}>
     {#each shown as artist (artist.name)}
       <div class="flex min-w-0 items-center gap-2">
-        <span class="truncate font-semibold [text-shadow:0_1px_2px_rgb(0_0_0/0.8)]">🎨 {artist.name.replaceAll('_', ' ')}</span>
+        <!-- opens the same menu as the artist in the tag list -->
+        <button
+          type="button"
+          class={['cursor-pointer truncate font-semibold [text-shadow:0_1px_2px_rgb(0_0_0/0.8)] hover:underline', tagText(artist.type)]}
+          onclick={(e) => {
+            signal(post.id, 'tag', artist.name);
+            tagMenu.show(e.currentTarget, artist.name, artist.type, target);
+          }}
+        >
+          🎨 {artist.name.replaceAll('_', ' ')}
+        </button>
         {@render follow(artist.name)}
       </div>
     {/each}

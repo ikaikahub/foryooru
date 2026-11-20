@@ -33,6 +33,13 @@
         {library.starred.has(name) ? '✖️ Unfavourite tag' : '⭐ Favourite tag'}
       </button>
     </li>
+    {#if type === 'artist'}
+      <li>
+        <button onclick={() => run(() => library.toggleTag('followedArtists', name))}>
+          {library.followed.has(name) ? '👋 Unfollow artist' : '👥 Follow artist'}
+        </button>
+      </li>
+    {/if}
     <li>
       <button onclick={() => run(() => library.toggleTag('blacklist', name))}>
         {library.blacklisted.has(name) ? '✅ Remove from blacklist' : '🚫 Blacklist tag (never show)'}

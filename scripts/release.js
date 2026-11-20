@@ -20,6 +20,9 @@ const currentRelease = Number(JSON.parse(packageText).version.split('.')[2]);
 const nextRelease = currentRelease + 1;
 
 writeFileSync(packagePath, packageText.replace(/"version": "[^"]*"/, `"version": "0.0.${nextRelease}"`));
+// pnpm re-installs before the next script whenever package.json changes, and that install hangs when run that way.
+// installing here instead records the new version, so later scripts start right away
+execSync('pnpm install --frozen-lockfile', { stdio: ['ignore', 'inherit', 'inherit'] });
 
 const tag = `v${nextRelease}`;
 const branch = git('branch --show-current');

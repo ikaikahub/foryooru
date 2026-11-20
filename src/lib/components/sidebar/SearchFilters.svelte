@@ -4,6 +4,9 @@
   import { RATING_BUTTONS, bare, staged } from '$lib/state/search.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
   import TagChip from '../TagChip.svelte';
+
+  // the chip's full height plus the 4px gap between chip rows, so a finger can hit it without the chip growing
+  const CHIP_BUTTON = 'flex min-w-7 cursor-pointer items-center justify-center self-stretch -my-1 py-1 text-base';
 </script>
 
 {#if staged.chips.length}
@@ -13,7 +16,7 @@
         {@const starred = library.starred.has(bare(chip.tag))}
         <button
           type="button"
-          class={['cursor-pointer px-0.5', starred ? 'text-warning hover:opacity-60' : 'opacity-60 hover:text-warning hover:opacity-100']}
+          class={[CHIP_BUTTON, starred ? 'text-warning hover:opacity-60' : 'opacity-60 hover:text-warning hover:opacity-100']}
           title={starred ? 'Remove from favourite tags' : 'Favourite tag'}
           onclick={() => library.toggleTag('favouriteTags', bare(chip.tag))}
         >
@@ -21,7 +24,7 @@
         </button>
         <button
           type="button"
-          class="cursor-pointer pr-2 pl-1 opacity-60 hover:opacity-100"
+          class={[CHIP_BUTTON, 'pr-1 opacity-60 hover:opacity-100']}
           aria-label="Remove"
           onclick={() => staged.remove(bare(chip.tag))}>×</button
         >
@@ -56,7 +59,7 @@
       >
         <button
           type="button"
-          class="cursor-pointer pr-2 pl-1 text-warning hover:opacity-60"
+          class={[CHIP_BUTTON, 'pr-1 text-warning hover:opacity-60']}
           title="Remove from favourite tags"
           onclick={() => library.toggleTag('favouriteTags', tag.name)}>★</button
         >

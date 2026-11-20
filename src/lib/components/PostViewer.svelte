@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { api, imageUrl, type PostDetail } from '$lib/api';
+  import { closeLayer, openLayer } from '$lib/navigation';
   import { library } from '$lib/state/library.svelte';
   import { staged } from '$lib/state/search.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
@@ -40,7 +42,8 @@
   const stretch = new Spring(0, SPRING);
   const infoProgress = new Spring(0, SPRING);
   const dismissOffset = new Spring(0, SPRING);
-  let tagsOpen = $state(false);
+  // the narrow-screen tag panel is a history layer, so Back closes it
+  const tagsOpen = $derived(page.state.viewerTags === true);
   let figure = $state<HTMLElement>();
   let pendingStep: number | null = null;
   let swipedAt = 0;
@@ -176,10 +179,19 @@
     if (delta !== 0) viewer.step(delta);
   }
 
+  // info is a history layer, so Back closes it before leaving the post
   function setMode(next: Mode) {
+    if (next === 'info' && mode !== 'info') openLayer('viewerInfo');
+    else if (next !== 'info' && mode === 'info') closeLayer('viewerInfo');
     mode = next;
     infoProgress.target = next === 'info' ? 1 : 0;
   }
+
+  $effect(() => {
+    if (page.state.viewerInfo || untrack(() => mode) !== 'info') return;
+    mode = 'normal';
+    infoProgress.target = 0;
+  });
 
   function toggleBars() {
     setMode(mode === 'immersive' ? 'normal' : mode === 'info' ? 'normal' : 'immersive');
@@ -274,7 +286,11 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (viewer.current === null || !isShortcut(e)) return;
-    if (e.key === 'Escape' && !tagMenu.current) viewer.close();
+    if (e.key === 'Escape' && !tagMenu.current) {
+      if (mode === 'info') setMode('normal');
+      else if (tagsOpen) closeLayer('viewerTags');
+      else viewer.close();
+    }
     else if (e.key === 'ArrowLeft') slide(-1);
     else if (e.key === 'ArrowRight') slide(1);
     else if (e.key === 'f') library.toggleLike(viewer.current);
@@ -347,7 +363,7 @@
           !tagsOpen && 'max-split:hidden',
         ]}
       >
-        <button class="btn btn-circle btn-sm sticky top-0 float-right split:hidden" aria-label="Close tags" onclick={() => (tagsOpen = false)}>✕</button>
+        <button class="btn btn-circle btn-sm sticky top-0 float-right split:hidden" aria-label="Close tags" onclick={() => closeLayer('viewerTags')}>✕</button>
         {#if viewer.current !== null && failures.has(viewer.current)}<ErrorNote error={failures.get(viewer.current)} />{/if}
         <div class={['transition-opacity', tagsPost !== post && 'opacity-50']}>
           <PostTags post={tagsPost} target={staged} site={settings.site} />
@@ -393,7 +409,7 @@
       >
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
         {#if post && !post.blockedBy.length}
-          <ArtistBar {post} class="w-full items-center" />
+          <ArtistBar {post} target={staged} class="w-full items-center" />
           <ViewerActions {post} site={settings.site} />
         {/if}
         
@@ -415,8 +431,8 @@
       >
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
         {#if post && !post.blockedBy.length}
-          <ArtistBar {post} class="mr-2" />
-          <button class={[BAR_BUTTON, 'split:hidden']} onclick={() => (tagsOpen = !tagsOpen)}>Tags</button>
+          <ArtistBar {post} target={staged} class="mr-2" />
+          <button class={[BAR_BUTTON, 'split:hidden']} onclick={() => (tagsOpen ? closeLayer('viewerTags') : openLayer('viewerTags'))}>Tags</button>
           <ViewerActions {post} site={settings.site} />
         {/if}
         <button class={BAR_BUTTON} aria-label="Close" title="Close (Esc)" onclick={() => viewer.close()}>✕</button>

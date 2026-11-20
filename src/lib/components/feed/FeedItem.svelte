@@ -3,6 +3,7 @@
   import { searchSimilar } from '$lib/postActions';
   import { taps } from '$lib/attachments';
   import { library } from '$lib/state/library.svelte';
+  import type { TagTarget } from '$lib/state/search.svelte';
   import { resetZoom } from '$lib/zoom';
   import type { Attachment } from 'svelte/attachments';
   import LikeBurst from '../LikeBurst.svelte';
@@ -21,8 +22,10 @@
     watch,
     onloaded,
     ontags,
+    target,
   }: {
     post: PostDetail;
+    target: TagTarget;
     current: boolean;
     preload: boolean;
     loaded: boolean;
@@ -67,7 +70,7 @@
 
   <!-- adding the exact same right-2 bottom0.5 rem as in ./+layout:54-->
   <!-- adding 0.5 rem to calc so it looks evenly cornered -->
-  <ArtistBar {post} class="absolute bottom-3 left-3 z-[4] max-w-[calc(100%-5rem)]" />
+  <ArtistBar {post} {target} class="absolute bottom-3 left-3 z-[4] max-w-[calc(100%-5rem)]" />
   <div class="absolute right-2 bottom-2 z-[4] flex flex-col gap-3">
     <ReactionButtons id={post.id} class={SIDE_BUTTON} />
     {#if ontags}<button class={SIDE_BUTTON} title="Tags and info (i)" onclick={ontags}>ℹ️</button>{/if}

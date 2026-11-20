@@ -11,7 +11,7 @@
   import { PRELOAD_AHEAD, touchDrag } from '$lib/attachments';
   import { addImpression, flushImpressions } from '$lib/impressions';
   import { isShortcut } from '$lib/keys';
-  import { hrefWith } from '$lib/navigation';
+  import { closeLayer, hrefWith, openLayer } from '$lib/navigation';
   import { signal, flushSignals } from '$lib/signals';
   import { library } from '$lib/state/library.svelte';
   import { FLICK_SPEED, SPRING, swipeAxis, swipeSpeed, trackMove, type Moves } from '$lib/motion';
@@ -206,7 +206,7 @@
   }
 
   async function showRelated(id: number) {
-    info.target = 0;
+    await closeLayer('feedInfo');
     signal(id, 'opened');
     // the related post gets its own history entry, so back returns to the post it was opened from
     const remember = () => pushState(hrefWith(page.url, { site: settings.site, post: id }), page.state);
@@ -235,9 +235,18 @@
     if (index !== -1 && index !== current) scrollToIndex(index);
   }
 
+  // the info sheet is a history layer, so Back closes it before leaving TikTok
+  $effect(() => {
+    info.target = page.state.feedInfo ? 1 : 0;
+  });
+
   function toggleInfo() {
-    if (!info.target && posts[current]) signal(posts[current].id, 'info');
-    info.target = info.target ? 0 : 1;
+    if (page.state.feedInfo) {
+      closeLayer('feedInfo');
+      return;
+    }
+    if (posts[current]) signal(posts[current].id, 'info');
+    openLayer('feedInfo');
   }
 
   const observer = new IntersectionObserver(
@@ -275,7 +284,6 @@
     exhausted = false;
     fetchChips = chips;
     error = null;
-    info.target = 0;
     scroller?.scrollTo({ top: 0, behavior: 'instant' });
     loadNext();
   });
@@ -412,7 +420,7 @@
     else if (e.key === 'i') settings.sidebarCollapsed = !settings.sidebarCollapsed;
     else if (e.key === 'Escape') {
       if (tagMenu.current) tagMenu.close();
-      else if (info.target) info.target = 0;
+      else if (page.state.feedInfo) closeLayer('feedInfo');
       else close();
     } else return;
     e.preventDefault();
@@ -450,6 +458,7 @@
         watch={watch(index)}
         onloaded={() => noteLoaded(post.id)}
         ontags={drawerLayout.current ? toggleInfo : undefined}
+        {target}
       />
     {/each}
     {#if loading && posts.length}
@@ -481,7 +490,7 @@
 
   {#if drawerLayout.current}
     {#if info.current > 0}
-      <button class="fixed inset-0 z-(--z-drawer-backdrop) cursor-default bg-black" style:opacity={0.4 * info.current} aria-label="Close info" onclick={() => (info.target = 0)}
+      <button class="fixed inset-0 z-(--z-drawer-backdrop) cursor-default bg-black" style:opacity={0.4 * info.current} aria-label="Close info" onclick={() => closeLayer('feedInfo')}
       ></button>
     {/if}
     <div class="fixed inset-x-0 bottom-0 z-(--z-drawer) h-[65%]" style:transform="translateY({(1 - info.current) * 100}%)" bind:clientHeight={sheetHeight}>
@@ -492,7 +501,7 @@
           actions={false}
           onrelated={showRelated}
           ondrag={(dy) => info.set(Math.max(0, 1 - dy / Math.max(1, sheetHeight)), { instant: true })}
-          onrelease={(speed) => (info.target = speed > FLICK_SPEED || info.current < 0.5 ? 0 : 1)}
+          onrelease={(speed) => (speed > FLICK_SPEED || info.current < 0.5 ? closeLayer('feedInfo') : (info.target = 1))}
         />
       {/if}
     </div>
