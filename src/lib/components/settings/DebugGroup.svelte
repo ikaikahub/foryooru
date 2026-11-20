@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, errorMessage } from '$lib/api';
+  import { BUILD_LABEL } from '$lib/build';
   import { debugReport } from '$lib/debug';
   import { settings } from '$lib/state/settings.svelte';
   import { toast } from '$lib/state/toast.svelte';
@@ -21,7 +22,9 @@
   }
 </script>
 
-<SettingsGroup title="Debug">
+{#snippet build()}{BUILD_LABEL}{/snippet}
+
+<SettingsGroup title="Debug" trailing={build}>
   <SettingsRow icon="🐞" label="Log timings" detail="Records slow commands, fetches and database writes so they can be copied">
     <input type="checkbox" class="toggle toggle-sm" aria-label="Log timings" bind:checked={settings.debug} />
   </SettingsRow>
