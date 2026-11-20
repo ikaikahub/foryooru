@@ -77,23 +77,33 @@
 
   async function importBackup() {
     const file = backupInput?.files?.[0];
-    if (backupInput) backupInput.value = '';
     if (!file) {
-      backupStep = 'the picker closed without a file';
+      backupStep = 'the picker closed without a file — try a normal tab or another browser';
       return;
     }
     backupStep = `picked ${file.name} (${formatBytes(file.size)})`;
+    let bytes: Uint8Array;
+    try {
+      // read before the confirm dialog: Android can lose access to the picked file while it is open
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      backupStep = 'the browser could not read that file';
+      showError(new Error('Could not read that file. On Android, move it out of Downloads (for example to Documents) and pick it again.'));
+      return;
+    }
     if (!confirm(`Replace all your databases and settings with ${file.name} (${formatBytes(file.size)})? Your current data will be lost.`)) {
       backupStep = 'cancelled';
       return;
     }
     await act(async () => {
-      await api.importData(file);
+      await api.importData(bytes);
       location.reload();
     }, `Importing ${file.name}…`);
   }
 
   function chooseBackup() {
+    // clear first so picking the same file again still fires change
+    if (backupInput) backupInput.value = '';
     backupStep = 'waiting for the picker…';
   }
 
@@ -216,18 +226,16 @@
       label="Import data"
       detail={backupStep ?? 'Replaces everything with a backup file'}
     >
-      <div class="relative">
-        <button class="btn btn-sm" disabled={working !== null}>📂 Choose file</button>
-        <input
-          bind:this={backupInput}
-          type="file"
-          accept=".zip,application/zip,application/octet-stream"
-          class="absolute inset-0 cursor-pointer opacity-0"
-          disabled={working !== null}
-          onclick={chooseBackup}
-          onchange={importBackup}
-        />
-      </div>
+      <input
+        bind:this={backupInput}
+        type="file"
+        class="file-input file-input-sm"
+        aria-label="Backup file"
+        disabled={working !== null}
+        onclick={chooseBackup}
+        onchange={importBackup}
+        oncancel={() => (backupStep = 'the picker was closed — try a normal tab or another browser')}
+      />
     </SettingsRow>
   </SettingsGroup>
 

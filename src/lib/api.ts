@@ -148,7 +148,7 @@ export const api = {
     storageUsage: () => invoke<StorageUsage>('storage_usage'),
     timings: () => invoke<TimingSpan[]>('timings'),
     exportData: () => exportData(),
-    importData: (file: File) => importData(file),
+    importData: (bytes: Uint8Array) => importData(bytes),
     resetDatabase: () => invoke<void>('reset_database'),
     resetAllDatabases: () => invoke<void>('reset_all_databases'),
     clearCache: () => Promise.resolve(),
@@ -285,7 +285,7 @@ async function exportData() {
     return downloadBlob(new Blob([bytes as BlobPart], { type: 'application/zip' }), `foryooru-backup-${day}.zip`);
 }
 
-async function importData(file: File) {
-    const settings = await importBackup(new Uint8Array(await file.arrayBuffer()));
+async function importData(bytes: Uint8Array) {
+    const settings = await importBackup(bytes);
     if (settings) overwritePersisted('settings.json', settings);
 }
