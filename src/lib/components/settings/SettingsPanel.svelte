@@ -29,6 +29,8 @@
   let importStatus = $state<ImportStatus>();
   let importUser = $state('');
   let fileInput = $state<HTMLInputElement>();
+  let backupInput = $state<HTMLInputElement>();
+  let backupStep = $state<string | null>(null);
   let working = $state<string | null>(null);
   const onGelbooru = $derived(settings.site === 'gelbooru');
 
@@ -74,13 +76,25 @@
   }
 
   async function importBackup() {
-    await confirmed(
-      'Replace all your databases and settings with a backup? Your current data will be lost.',
-      async () => {
-        if (await api.importData()) location.reload();
-      },
-      'Importing backup…',
-    );
+    const file = backupInput?.files?.[0];
+    if (backupInput) backupInput.value = '';
+    if (!file) {
+      backupStep = 'the picker closed without a file';
+      return;
+    }
+    backupStep = `picked ${file.name} (${formatBytes(file.size)})`;
+    if (!confirm(`Replace all your databases and settings with ${file.name} (${formatBytes(file.size)})? Your current data will be lost.`)) {
+      backupStep = 'cancelled';
+      return;
+    }
+    await act(async () => {
+      await api.importData(file);
+      location.reload();
+    }, `Importing ${file.name}…`);
+  }
+
+  function chooseBackup() {
+    backupStep = 'waiting for the picker…';
   }
 
   async function confirmed(message: string, action: () => Promise<unknown>, doing: string) {
@@ -197,8 +211,23 @@
         >Export</button
       >
     </SettingsRow>
-    <SettingsRow icon="📥" label="Import data" detail="Replaces everything with a backup file">
-      <button class="btn btn-sm" disabled={working !== null} onclick={importBackup}>📂 Choose file</button>
+    <SettingsRow
+      icon="📥"
+      label="Import data"
+      detail={backupStep ?? 'Replaces everything with a backup file'}
+    >
+      <div class="relative">
+        <button class="btn btn-sm" disabled={working !== null}>📂 Choose file</button>
+        <input
+          bind:this={backupInput}
+          type="file"
+          accept=".zip,application/zip,application/octet-stream"
+          class="absolute inset-0 cursor-pointer opacity-0"
+          disabled={working !== null}
+          onclick={chooseBackup}
+          onchange={importBackup}
+        />
+      </div>
     </SettingsRow>
   </SettingsGroup>
 

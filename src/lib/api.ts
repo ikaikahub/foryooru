@@ -148,7 +148,7 @@ export const api = {
     storageUsage: () => invoke<StorageUsage>('storage_usage'),
     timings: () => invoke<TimingSpan[]>('timings'),
     exportData: () => exportData(),
-    importData: () => importData(),
+    importData: (file: File) => importData(file),
     resetDatabase: () => invoke<void>('reset_database'),
     resetAllDatabases: () => invoke<void>('reset_all_databases'),
     clearCache: () => Promise.resolve(),
@@ -242,6 +242,7 @@ function downloadBlob(blob: Blob, name: string): SavedFile {
     document.body.append(link);
     link.click();
     link.remove();
+    // revoking before the browser has finished copying the blob cancels large downloads, so give slow phones a while
     setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
     return { name, folder: 'Downloads' };
 }
@@ -284,17 +285,7 @@ async function exportData() {
     return downloadBlob(new Blob([bytes as BlobPart], { type: 'application/zip' }), `foryooru-backup-${day}.zip`);
 }
 
-async function importData() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.zip,application/zip';
-    const file = await new Promise<File | undefined>((resolve) => {
-        input.onchange = () => resolve(input.files?.[0]);
-        input.oncancel = () => resolve(undefined);
-        input.click();
-    });
-    if (!file) return false;
+async function importData(file: File) {
     const settings = await importBackup(new Uint8Array(await file.arrayBuffer()));
     if (settings) overwritePersisted('settings.json', settings);
-    return true;
 }
