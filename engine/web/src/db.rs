@@ -231,6 +231,7 @@ fn connect(path: &Path) -> Result<Connection> {
     conn.execute_batch(
         "PRAGMA journal_mode = DELETE;
          PRAGMA synchronous = NORMAL;
+         PRAGMA cache_size = -32768;
          PRAGMA foreign_keys = ON;
          PRAGMA busy_timeout = 10000;",
     )?;
