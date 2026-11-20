@@ -1,0 +1,4 @@
+<resources>
+    <!-- debug builds install next to the release app as com.j.foryooru.dev, this keeps their icons apart -->
+    <string name="app_name">"Foryooru Dev"</string>
+</resources>

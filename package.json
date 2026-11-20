@@ -13,7 +13,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
     "release": "node scripts/release.js",
-    "build-android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1"
+    "build-android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1",
+    "dev-android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-android.ps1"
   },
   "license": "MIT",
   "dependencies": {

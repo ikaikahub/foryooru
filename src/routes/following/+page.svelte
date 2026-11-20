@@ -6,10 +6,11 @@
   import ErrorNote from '$lib/components/ErrorNote.svelte';
   import ReactedPosts from '$lib/components/ReactedPosts.svelte';
   import SelectMenu from '$lib/components/SelectMenu.svelte';
+  import SideScroller from '$lib/components/SideScroller.svelte';
   import { setParams } from '$lib/navigation';
   import { library } from '$lib/state/library.svelte';
   import { onRerun } from '$lib/state/rerun.svelte';
-  import { searchHref, splitQuery, urlQuery } from '$lib/state/search.svelte';
+  import { splitQuery, staged, urlQuery } from '$lib/state/search.svelte';
   import { viewer } from '$lib/state/viewer.svelte';
   import { untrack } from 'svelte';
 
@@ -67,7 +68,10 @@
   <h1 class="mr-auto text-lg font-semibold">👥 Following</h1>
   {#if refreshing}<span class="loading loading-spinner loading-sm" title="Checking for new posts"></span>{/if}
   {#if !viewAll}
-    <SelectMenu bind:value={order} options={ORDERS} buttonClass="btn-sm" alignEnd title="Sort artists" />
+    <label>
+      Sort artists by: 
+      <SelectMenu bind:value={order} options={ORDERS} buttonClass="btn-sm" alignEnd title="Sort artists" />
+    </label>
   {/if}
   <button class={['btn btn-sm', viewAll && 'btn-primary']} aria-pressed={viewAll} onclick={() => setParams({ view: viewAll ? null : 'all', page: null })}>
     {viewAll ? 'By artist' : 'View all'}
@@ -91,13 +95,13 @@
     {#each rows as row (row.artist.name)}
       <section>
         <div class="mb-1 flex items-center gap-2">
-          <button class="link truncate font-semibold link-hover" title="Search this artist" onclick={() => goto(searchHref('/', row.artist.name))}>
+          <button class="link truncate font-semibold link-hover" title="Search this artist" onclick={() => goto(staged.searchHref(row.artist.name))}>
             🎨 {row.artist.name.replaceAll('_', ' ')}
           </button>
           <button class="btn btn-ghost btn-xs" onclick={() => library.toggleTag('followedArtists', row.artist.name)}>Unfollow</button>
         </div>
         {#if row.posts.length}
-          <div class="flex gap-1 overflow-x-auto pb-1">
+          <SideScroller class="flex gap-1">
             {#each row.posts as post (post.id)}
               <button
                 class="h-40 shrink-0 cursor-pointer overflow-hidden rounded bg-base-300"
@@ -107,7 +111,7 @@
                 <img class="size-full object-cover" alt="" {@attach image(imageUrl('sample', post.id))} />
               </button>
             {/each}
-          </div>
+          </SideScroller>
         {:else}
           <p class="text-sm opacity-60">
             {#if refreshing}

@@ -18,6 +18,7 @@
   import { viewer } from '$lib/state/viewer.svelte';
   import { untrack } from 'svelte';
   import SectionTitle from './SectionTitle.svelte';
+  import SideScroller from './SideScroller.svelte';
 
   let { id, onopen = (related, ids) => viewer.show(related, ids) }: { id: number; onopen?: (id: number, ids: number[]) => void } = $props();
 
@@ -65,9 +66,9 @@
     <span class="loading loading-spinner loading-md opacity-60"></span>
   </div>
 {:else if hasOthers}
-  <div
-    bind:this={row}
-    class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2"
+  <SideScroller
+    bind:element={row}
+    class="-mx-1 mb-2 flex gap-2 px-1"
     onscroll={(e) => {
       if (strip) strip.scrollLeft = e.currentTarget.scrollLeft;
     }}
@@ -85,5 +86,5 @@
         <img class="block h-24 w-auto max-w-none" src={imageUrl('thumbnail', related.id)} alt="" loading="lazy" />
       </button>
     {/each}
-  </div>
+  </SideScroller>
 {/if}

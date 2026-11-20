@@ -3,7 +3,7 @@
   import { bare, similarId } from '$lib/state/search.svelte';
   import { tagText } from '$lib/tags';
 
-  let { tag, type = null }: { tag: string; type?: TagType | null } = $props();
+  let { tag, type = null, blacklisted = false }: { tag: string; type?: TagType | null; blacklisted?: boolean } = $props();
 
   const EXCLUDED = 'text-error line-through';
 
@@ -17,5 +17,6 @@
     <span class={[excluded && EXCLUDED]}>similar</span>
   </span>
 {:else}
-  <span class={['break-all', excluded ? EXCLUDED : tagText(type)]}>{bare(tag)}</span>
+  <span class={['break-all', excluded ? EXCLUDED : tagText(type), blacklisted && 'line-through']}>{bare(tag)}</span>
+  {#if blacklisted}<span class="text-xs whitespace-nowrap">&nbsp;(blacklisted)</span>{/if}
 {/if}

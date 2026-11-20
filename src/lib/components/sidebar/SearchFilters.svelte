@@ -12,7 +12,13 @@
 {#if staged.chips.length}
   <div class="flex flex-wrap gap-1">
     {#each staged.chips as chip (chip.tag)}
-      <TagChip tag={chip.tag} type={chip.type} title="Include / exclude" onclick={() => staged.toggleExclude(chip)}>
+      <TagChip
+        tag={chip.tag}
+        type={chip.type}
+        blacklisted={library.blacklisted.has(bare(chip.tag))}
+        title="Include / exclude"
+        onclick={() => staged.toggleExclude(chip)}
+      >
         {@const starred = library.starred.has(bare(chip.tag))}
         <button
           type="button"
@@ -54,6 +60,7 @@
       <TagChip
         tag={tag.name}
         type={tag.type}
+        blacklisted={library.blacklisted.has(tag.name)}
         title="Search, include, exclude…"
         onclick={(e) => tagMenu.show(e.currentTarget as HTMLElement, tag.name, tag.type, staged)}
       >
