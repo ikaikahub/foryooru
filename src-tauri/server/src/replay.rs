@@ -13,6 +13,8 @@ use std::fmt::Write;
 const HELD_OUT: f64 = 0.2;
 const DEPTHS: [usize; 4] = [60, 200, 1000, 2000];
 const TOP: usize = 100;
+// how far down For you to look for posts by the artists the account went on to like
+const ARTIST_DEPTHS: [usize; 3] = [100, 500, 2000];
 
 #[derive(Deserialize)]
 pub struct Reactions {
@@ -78,6 +80,13 @@ pub fn run(corpus: &Corpus, reactions: &Reactions) -> String {
         .filter(|id| artists(corpus, **id).iter().any(|artist| known_artists.contains(artist)))
         .count();
 
+    // the good new artists are the ones first liked among the hidden likes; any post of theirs counts as found
+    let good_new_artists: HashSet<i64> = new_artist.iter().flat_map(|id| artists(corpus, *id)).collect();
+    let reached = |depth: usize| -> usize {
+        let shown: HashSet<i64> = ranked.iter().take(depth).flat_map(|id| artists(corpus, *id)).collect();
+        good_new_artists.intersection(&shown).count()
+    };
+
     let mut report = String::new();
     let _ = writeln!(
         report,
@@ -101,6 +110,16 @@ pub fn run(corpus: &Corpus, reactions: &Reactions) -> String {
         "- by artists not liked before ({}): {}",
         new_artist.len(),
         recall(&positions, &new_artist)
+    );
+    let _ = writeln!(
+        report,
+        "- good new artists with a post in For you, of {}: {}",
+        good_new_artists.len(),
+        ARTIST_DEPTHS
+            .iter()
+            .map(|depth| format!("top {depth}: {}", reached(*depth)))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     let _ = writeln!(
         report,
