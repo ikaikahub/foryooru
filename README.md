@@ -1,3 +1,5 @@
-# Foryooru
+`sudo dnf config-manager setopt fedora-cisco-openh264.enabled=1`
 
-Foryooru is a Gelbooru/Danbooru client with a for you page and a TikTok mode for doomscrolling
+## Credits
+
+Emoji graphics are from [Twemoji](https://github.com/jdecked/twemoji) by Twitter, Inc and other contributors, licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). The bundled font is [Twemoji Mozilla](https://github.com/mozilla/twemoji-colr), and the icons in `static/emoji` are modified from Twemoji.

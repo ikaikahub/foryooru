@@ -9,6 +9,10 @@
 
   let copying = $state(false);
 
+  $effect(() => {
+    api.setTimings(settings.debug).catch(() => {});
+  });
+
   async function copyLogs() {
     copying = true;
     try {

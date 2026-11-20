@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { resolve } from '$app/paths';
   import { api, errorMessage, type ImportStatus, type StorageUsage, type Usage } from '$lib/api';
   import { formatBytes } from '$lib/format';
   import { announce } from '$lib/postActions';
@@ -9,18 +8,22 @@
   import { rememberedSearch, searchHref } from '$lib/state/search.svelte';
   import { settings } from '$lib/state/settings.svelte';
   import { toast } from '$lib/state/toast.svelte';
-  import { listen } from '$lib/engine/client';
+  import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWebview } from '@tauri-apps/api/webview';
+  import { load } from '@tauri-apps/plugin-store';
   import { onMount } from 'svelte';
+  import AccountGroup from './AccountGroup.svelte';
   import ApiGroup from './ApiGroup.svelte';
-  import AlgorithmGroup from './AlgorithmGroup.svelte';
   import AppearanceGroup from './AppearanceGroup.svelte';
   import BlacklistPanel from './BlacklistPanel.svelte';
   import DebugGroup from './DebugGroup.svelte';
+  import SelectMenu from '../SelectMenu.svelte';
   import GroupColumns from '../GroupColumns.svelte';
   import LoadingBar from '../LoadingBar.svelte';
   import SettingsGroup from '../SettingsGroup.svelte';
   import SettingsRow from '../SettingsRow.svelte';
 
+  const CACHE_LIMITS = [256, 512, 1024, 2048, 5120, 10240].map((megabytes) => ({ value: megabytes, label: formatBytes(megabytes * 1024 * 1024) }));
   const NOTE = 'px-3 py-2.5 text-sm';
   const ERROR_MS = 8000;
 
@@ -29,9 +32,9 @@
   let importStatus = $state<ImportStatus>();
   let importUser = $state('');
   let fileInput = $state<HTMLInputElement>();
-  let backupInput = $state<HTMLInputElement>();
-  let backupStep = $state<string | null>(null);
   let working = $state<string | null>(null);
+  let defaultSaveFolder = $state<string>();
+
   const onGelbooru = $derived(settings.site === 'gelbooru');
 
   $effect(() => {
@@ -47,9 +50,13 @@
 
   onMount(() => {
     refreshUsage();
+    api.defaultSaveFolder().then(
+      (folder) => (defaultSaveFolder = folder),
+      showError,
+    );
     api.importStatus().then((status) => (importStatus = status));
-    const unlisten = listen<ImportStatus>('import', (status) => (importStatus = status));
-    return () => unlisten();
+    const unlisten = listen<ImportStatus>('import', (event) => (importStatus = event.payload));
+    return () => unlisten.then((stop) => stop());
   });
 
   const describe = (found: Usage | undefined) =>
@@ -68,6 +75,11 @@
     }
   }
 
+  async function changeSaveFolder() {
+    const picked = await api.pickSaveFolder();
+    if (picked) settings.saveFolder = picked;
+  }
+
   async function importFile() {
     const file = fileInput?.files?.[0];
     if (!file) return;
@@ -76,35 +88,13 @@
   }
 
   async function importBackup() {
-    const file = backupInput?.files?.[0];
-    if (!file) {
-      backupStep = 'the picker closed without a file — try a normal tab or another browser';
-      return;
-    }
-    backupStep = `picked ${file.name} (${formatBytes(file.size)})`;
-    let bytes: Uint8Array;
-    try {
-      // read before the confirm dialog: Android can lose access to the picked file while it is open
-      bytes = new Uint8Array(await file.arrayBuffer());
-    } catch {
-      backupStep = 'the browser could not read that file';
-      showError(new Error('Could not read that file. On Android, move it out of Downloads (for example to Documents) and pick it again.'));
-      return;
-    }
-    if (!confirm(`Replace all your databases and settings with ${file.name} (${formatBytes(file.size)})? Your current data will be lost.`)) {
-      backupStep = 'cancelled';
-      return;
-    }
-    await act(async () => {
-      await api.importData(bytes);
-      location.reload();
-    }, `Importing ${file.name}…`);
-  }
-
-  function chooseBackup() {
-    // clear first so picking the same file again still fires change
-    if (backupInput) backupInput.value = '';
-    backupStep = 'waiting for the picker…';
+    await confirmed(
+      'Replace all your databases and settings with a backup? Your current data will be lost.',
+      async () => {
+        if (await api.importData()) location.reload();
+      },
+      'Importing backup…',
+    );
   }
 
   async function confirmed(message: string, action: () => Promise<unknown>, doing: string) {
@@ -114,10 +104,14 @@
   }
 
   async function resetSettings() {
-    localStorage.removeItem('settings.json');
+    const store = await load('settings.json');
+    await store.clear();
+    await store.save();
   }
 
   async function resetEverything() {
+    await getCurrentWebview().clearAllBrowsingData();
+    await api.clearCache();
     await api.resetAllDatabases();
     await resetSettings();
   }
@@ -136,16 +130,16 @@
     <SettingsRow icon="💔" label="Disliked posts" onclick={() => goto(searchHref('/disliked', rememberedSearch('/disliked')))} />
   </SettingsGroup>
 
-  <AlgorithmGroup />
-
   <SettingsGroup title="Activity">
-    <SettingsRow icon="📜" label="View activity" onclick={() => goto(resolve('/activity'))} />
-    <SettingsRow icon="🗃️" label="Database info" onclick={() => goto(resolve('/database'))} />
+    <SettingsRow icon="📜" label="View activity" onclick={() => goto('/activity')} />
+    <SettingsRow icon="🗃️" label="Database info" onclick={() => goto('/database')} />
   </SettingsGroup>
 
   <DebugGroup />
 
   <AppearanceGroup />
+
+  <AccountGroup />
 
   <ApiGroup />
 
@@ -193,6 +187,30 @@
   </SettingsGroup>
 
   <SettingsGroup title="Storage">
+    <SettingsRow icon="📁" label="Save location" detail={settings.saveFolder?.label ?? defaultSaveFolder}>
+      {#if settings.saveFolder}
+        <button class="btn btn-sm" onclick={() => (settings.saveFolder = null)}>Reset</button>
+      {/if}
+      <button class="btn btn-sm" onclick={() => act(changeSaveFolder)}>Change</button>
+    </SettingsRow>
+    <SettingsRow icon="📏" label="Image cache limit">
+      {#if usage}
+        <SelectMenu
+          value={usage.cacheLimitMb}
+          options={CACHE_LIMITS}
+          buttonClass="btn-sm w-28"
+          alignEnd
+          onchange={(megabytes) => act(() => api.setCacheLimit(megabytes))}
+        />
+      {/if}
+    </SettingsRow>
+    <SettingsRow icon="🗂️" label="Image cache" detail={describe(usage?.cache)}>
+      <button
+        class="btn btn-sm"
+        disabled={working !== null}
+        onclick={() => confirmed('Delete every cached image?', api.clearCache, 'Clearing image cache…')}>Clear</button
+      >
+    </SettingsRow>
     <SettingsRow icon="🗄️" label="{currentSite().label} database" detail={describe(usage?.database)}>
       <button
         class="btn btn-sm"
@@ -221,21 +239,8 @@
         >Export</button
       >
     </SettingsRow>
-    <SettingsRow
-      icon="📥"
-      label="Import data"
-      detail={backupStep ?? 'Replaces everything with a backup file'}
-    >
-      <input
-        bind:this={backupInput}
-        type="file"
-        class="file-input file-input-sm"
-        aria-label="Backup file"
-        disabled={working !== null}
-        onclick={chooseBackup}
-        onchange={importBackup}
-        oncancel={() => (backupStep = 'the picker was closed — try a normal tab or another browser')}
-      />
+    <SettingsRow icon="📥" label="Import data" detail="Replaces everything with a backup file">
+      <button class="btn btn-sm" disabled={working !== null} onclick={importBackup}>📂 Choose file</button>
     </SettingsRow>
   </SettingsGroup>
 

@@ -4,7 +4,6 @@
   import { swipeAxis, swipeSpeed, trackMove, type Moves } from '$lib/motion';
   import type { TagTarget } from '$lib/state/search.svelte';
   import { settings } from '$lib/state/settings.svelte';
-  import ApiNote from './ApiNote.svelte';
   import ErrorNote from './ErrorNote.svelte';
   import PostTags from './PostTags.svelte';
   import ViewerActions from './ViewerActions.svelte';
@@ -29,10 +28,7 @@
     onrelated?: (id: number, ids: number[]) => void;
   } = $props();
 
-  const foreign = $derived(site !== settings.site);
-
-  let list = $state<HTMLElement>();
-  let drag: { x0: number; y0: number; mode: 'drag' | 'native' | null; moves: Moves } | null = null;
+  let list = $state<HTMLElement>();  let drag: { x0: number; y0: number; mode: 'drag' | 'native' | null; moves: Moves } | null = null;
 
   function ontouchstart(e: TouchEvent) {
     drag = e.touches.length === 1 ? { x0: e.touches[0].clientX, y0: e.touches[0].clientY, mode: null, moves: [] } : null;
@@ -66,7 +62,6 @@
     {#if turnError}<ErrorNote error={turnError} />{/if}
     {#if post && !post.blockedBy.length}
       {#if actions}<div class="flex flex-wrap justify-center gap-1.5 py-2"><ViewerActions {post} {site} /></div>{/if}
-      {#if foreign}<ApiNote {site} />{/if}
       <PostTags {post} {target} {onrelated} {site} />
     {/if}
   </div>

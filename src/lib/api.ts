@@ -1,8 +1,5 @@
-import { SvelteMap } from 'svelte/reactivity';
-import { exportBackup, importBackup, invoke as callEngine, ready } from '$lib/engine/client';
-import { overwritePersisted, snapshotPersisted } from '$lib/state/persisted.svelte';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { settings } from '$lib/state/settings.svelte';
-import { GELBOORU_IMAGES } from '$lib/sites';
 
 export type TagType = 'general' | 'artist' | 'copyright' | 'character' | 'metadata' | 'deprecated';
 export type Tag = { name: string; type: TagType | null; count: number | null };
@@ -19,8 +16,6 @@ export type Post = {
     previewHeight: number;
     postedAt: number | null;
     fileUrl: string;
-    previewUrl: string;
-    sampleUrl: string;
     media: Media;
     fileExt: string;
     liked: boolean;
@@ -46,6 +41,13 @@ export type PostFamily = { relation: 'family' | 'similar'; posts: Post[] };
 export type Signal = 'scrollBack' | 'videoLooped' | 'info' | 'shared' | 'tag' | 'similar' | 'opened';
 export type StorageUsage = { database: Usage; settings: Usage; cache: Usage; cacheLimitMb: number };
 export type TimingSpan = { at: number; name: string; ms: number; note: string };
+
+export type SyncStatus = {
+    running: boolean;
+    lastSynced: number | null;
+    pulled: number;
+    error: string | null;
+};
 
 export type ImportStatus = {
     running: boolean;
@@ -79,6 +81,10 @@ export type ErrorKind =
     | 'status'
     | 'rejected'
     | 'needsGelbooru'
+    | 'needsGelbooruLogin'
+    | 'gelbooruFavouriteRefused'
+    | 'loginWindow'
+    | 'needsDanbooruLogin'
     | 'cdnBusy'
     | 'database'
     | 'io'
@@ -89,8 +95,15 @@ export type ErrorKind =
     | 'importRunning'
     | 'invalidImportFile'
     | 'noDownloadsFolder'
+    | 'unsupportedSaveLocation'
+    | 'unsupportedFile'
+    | 'image'
+    | 'clipboard'
+    | 'videoServer'
     | 'gallery'
-    | 'unknownTable';
+    | 'unknownTable'
+    | 'archive'
+    | 'notABackup';
 
 export type AppError = { kind: ErrorKind; message: string };
 
@@ -103,7 +116,7 @@ export function errorMessage(error: unknown) {
 }
 
 export const api = {
-    waitUntilReady: () => ready,
+    waitUntilReady: () => invoke<void>('wait_until_ready'),
     browse: (chips: string[], page: number) => invoke<Listing>('browse', { chips, page }),
     forYou: (chips: string[], hideLiked: boolean, discover: boolean) =>
         invoke<Ranked[]>('for_you', { chips, hideLiked, discover }),
@@ -117,16 +130,15 @@ export const api = {
     posts: (ids: number[]) => invoke<Post[]>('posts', { ids }),
     postDetail: (id: number) => invoke<PostDetail>('post_detail', { id }),
     openPost: (id: number) => invoke<PostDetail>('open_post', { id }),
-    previewPost: (site: Site, id: number) => previewPost(site, id),
     postFamily: (id: number, chips: string[]) => invoke<PostFamily>('post_family', { id, chips }),
-    fileSize: (id: number, site: Site = settings.site) => fileSize(id, site),
+    fileSize: (id: number, _site: Site = settings.site) => invoke<number | null>('file_size', { id }),
     toggleLike: (id: number, chips: string[]) => invoke<PostState>('toggle_like', { id, chips }),
     toggleDislike: (id: number) => invoke<PostState>('toggle_dislike', { id }),
     likedPosts: (chips: string[], page: number) => invoke<Listing>('liked_posts', { chips, page }),
     dislikedPosts: (chips: string[], page: number) => invoke<Listing>('disliked_posts', { chips, page }),
     setSiteFavourite: (id: number, favourite: boolean) => invoke<void>('set_site_favourite', { id, favourite }),
-    gelbooruLogin: () => Promise.reject<GelbooruSession | null>(desktopOnly('Gelbooru login')),
-    gelbooruLogout: () => Promise.resolve(),
+    gelbooruLogin: () => invoke<GelbooruSession | null>('gelbooru_login'),
+    gelbooruLogout: () => invoke<void>('gelbooru_logout'),
     clearLikes: () => invoke<void>('clear_likes'),
     suggestTags: (typed: string) => invoke<Tag[]>('suggest_tags', { typed }),
     tagsNamed: (names: string[]) => invoke<Tag[]>('tags_named', { names }),
@@ -136,156 +148,53 @@ export const api = {
     savedSearches: () => invoke<SavedSearch[]>('saved_searches'),
     toggleSavedSearch: (query: string) => invoke<SavedSearch[]>('toggle_saved_search', { query }),
     recordImpressions: (impressions: Impression[], chips: string[]) => invoke<void>('record_impressions', { impressions, chips }),
-    recordSignals: (signals: { post: number; signal: Signal; tag: string | null }[]) => invoke<void>('record_signals', { signals }),
+    recordSignal: (post: number, signal: Signal, tag: string | null) => invoke<void>('record_signal', { post, signal, tag }),
+    recordSignals: (signals: { post: number; signal: Signal; tag: string | null }[]) =>
+        invoke<void>('record_signals', { signals }),
     recordSearch: (query: string) => invoke<void>('record_search', { query }),
     activity: (filter: ActivityFilter, page: number) => invoke<ActivityPage>('activity', { filter, page }),
     tableSizes: () => invoke<TableSize[]>('table_sizes'),
     tablePage: (table: string, page: number) => invoke<TablePage>('table_page', { table, page }),
     importStatus: () => invoke<ImportStatus>('import_status'),
+    account: () => invoke<string | null>('account'),
+    syncStatus: () => invoke<SyncStatus>('sync_status'),
+    signUp: (username: string, password: string) => invoke<string>('sign_up', { username, password }),
+    logIn: (username: string, password: string) => invoke<string>('log_in', { username, password }),
+    logOut: () => invoke<void>('log_out'),
     importFavourites: (user: string) => invoke<void>('import_favourites', { user }),
     setSite: (site: Site) => invoke<void>('set_site', { site }),
     importFromFile: (name: string, contents: string) => invoke<void>('import_from_file', { name, contents }),
     storageUsage: () => invoke<StorageUsage>('storage_usage'),
     timings: () => invoke<TimingSpan[]>('timings'),
-    exportData: () => exportData(),
-    importData: (bytes: Uint8Array) => importData(bytes),
+    setTimings: (enabled: boolean) => invoke<void>('set_timings', { enabled }),
+    exportData: () => invoke<SavedFile>('export_data'),
+    importData: () => invoke<boolean>('import_data'),
     resetDatabase: () => invoke<void>('reset_database'),
     resetAllDatabases: () => invoke<void>('reset_all_databases'),
-    clearCache: () => Promise.resolve(),
-    setCacheLimit: (_megabytes: number) => Promise.resolve(),
-    saveSample: (id: number, site: Site = settings.site) => saveImage('sample', id, site),
-    saveOriginal: (id: number, site: Site = settings.site) => saveImage('original', id, site),
-    pickSaveFolder: () => Promise.resolve<SaveFolder | null>(null),
-    defaultSaveFolder: () => Promise.resolve('Downloads'),
-    copyImage: (id: number, site: Site = settings.site) => copyImage(id, site),
+    clearCache: () => invoke<void>('clear_cache'),
+    setCacheLimit: (megabytes: number) => invoke<void>('set_cache_limit', { megabytes }),
+    saveSample: (id: number, _site: Site = settings.site) => invoke<SavedFile>('save_sample', { id }),
+    saveOriginal: (id: number, _site: Site = settings.site) => invoke<SavedFile>('save_original', { id }),
+    saveOriginalAs: (id: number) => invoke<SavedFile | null>('save_original_as', { id }),
+    pickSaveFolder: () => invoke<SaveFolder | null>('pick_save_folder'),
+    defaultSaveFolder: () => invoke<string>('default_save_folder'),
+    copyImage: (id: number, _site: Site = settings.site) => invoke<void>('copy_image', { id }),
 };
 
-type MediaUrls = Record<'thumbnail' | 'sample' | 'original', string>;
+const imageBase = convertFileSrc('', 'img');
 
-// the same post id can exist on both sites, so cached media urls carry the site
-const known = new SvelteMap<string, MediaUrls>();
-const lookups = new Set<number>();
-let lookupTimer: ReturnType<typeof setTimeout> | undefined;
-
-const mediaKey = (site: Site, id: number) => `${site}:${id}`;
-
-// Gelbooru's image servers refuse other sites' pages, so its images load through the proxy too.
-// The database keeps the original addresses, so changing the proxy doesn't break stored posts.
-function throughProxy(url: string) {
-    if (!/^https:\/\/[a-z-]+\d*\.gelbooru\.com\//.test(url)) return url;
-    return `${GELBOORU_IMAGES}/img/${url.slice('https://'.length)}`;
+export function imageUrl(kind: 'thumbnail' | 'sample' | 'original', id: number, _site: Site = settings.site) {
+    return `${imageBase}${kind}/${id}`;
 }
 
-function remember(value: unknown, site: Site = settings.site) {
-    if (Array.isArray(value)) {
-        value.forEach((post) => remember(post, site));
-    } else if (value && typeof value === 'object') {
-        const post = value as Partial<Post>;
-        if (typeof post.id === 'number' && typeof post.fileUrl === 'string') {
-            // Gelbooru gives videos and gifs no sample, so their still is the thumbnail rather than the media file
-            const moving = post.media === 'video' || post.media === 'gif';
-            const sample = moving ? post.previewUrl || post.fileUrl : post.sampleUrl || post.fileUrl;
-            known.set(mediaKey(site, post.id), {
-                thumbnail: throughProxy(post.previewUrl || post.sampleUrl || post.fileUrl),
-                sample: throughProxy(sample),
-                original: throughProxy(post.fileUrl),
-            });
-        }
-        Object.values(value).forEach((post) => remember(post, site));
-    }
+export const showsOriginal = (img: EventTarget, id: number, _site: Site = settings.site) =>
+    img instanceof HTMLImageElement && img.currentSrc.split('?')[0] === imageUrl('original', id);
+
+let videoBase: string | null = null;
+
+export async function loadVideoBase() {
+    videoBase = await invoke<string | null>('video_base');
 }
 
-function lookUp(id: number) {
-    if (lookups.has(id)) return;
-    lookups.add(id);
-    clearTimeout(lookupTimer);
-    lookupTimer = setTimeout(() => {
-        const ids = [...lookups].filter((wanted) => !known.has(mediaKey(settings.site, wanted)));
-        if (ids.length) invoke<Post[]>('posts', { ids }).catch(() => {});
-    });
-}
-
-async function invoke<T>(command: string, args?: Record<string, unknown>) {
-    const result = await callEngine<T>(command, args);
-    remember(result);
-    return result;
-}
-
-// shared links show the other site's post without storing it, so the urls are kept under that site
-async function previewPost(site: Site, id: number) {
-    const post = await callEngine<PostDetail>('preview_post', { site, id });
-    remember(post, site);
-    return post;
-}
-
-export function imageUrl(kind: 'thumbnail' | 'sample' | 'original', id: number, site: Site = settings.site) {
-    const urls = known.get(mediaKey(site, id));
-    if (!urls && site === settings.site) lookUp(id);
-    return urls?.[kind] ?? '';
-}
-
-export const showsOriginal = (img: EventTarget, id: number, site: Site = settings.site) =>
-    img instanceof HTMLImageElement && !!known.get(mediaKey(site, id)) && img.currentSrc === known.get(mediaKey(site, id))?.original;
-
-export async function loadVideoBase() {}
-
-export const videoUrl = (id: number, site: Site = settings.site) => imageUrl('original', id, site);
-
-function desktopOnly(feature: string): AppError {
-    return { kind: 'tauri', message: `${feature} needs the desktop app` };
-}
-
-function downloadBlob(blob: Blob, name: string): SavedFile {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = name;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    // revoking before the browser has finished copying the blob cancels large downloads, so give slow phones a while
-    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
-    return { name, folder: 'Downloads' };
-}
-
-async function mediaBlob(kind: 'sample' | 'original', id: number, site: Site) {
-    const url = imageUrl(kind, id, site);
-    if (!url) throw { kind: 'postNotFound', message: "That post isn't cached" } satisfies AppError;
-    const response = await fetch(url);
-    if (!response.ok) throw { kind: 'status', message: `The image server answered ${response.status}` } satisfies AppError;
-    return { blob: await response.blob(), url };
-}
-
-async function saveImage(kind: 'sample' | 'original', id: number, site: Site) {
-    const { blob, url } = await mediaBlob(kind, id, site);
-    const extension = url.split('?')[0].split('.').pop() ?? 'jpg';
-    const suffix = kind === 'sample' ? '_sample' : '';
-    return downloadBlob(blob, `${id}${suffix}.${extension}`);
-}
-
-// browsers only accept PNG on the clipboard, so the image is redrawn as one
-async function copyImage(id: number, site: Site) {
-    const { blob } = await mediaBlob('original', id, site);
-    const bitmap = await createImageBitmap(blob);
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
-    const png = await canvas.convertToBlob({ type: 'image/png' });
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
-}
-
-async function fileSize(id: number, site: Site) {
-    const url = imageUrl('original', id, site);
-    if (!url) return null;
-    const length = (await fetch(url, { method: 'HEAD' })).headers.get('content-length');
-    return length ? Number(length) : null;
-}
-
-async function exportData() {
-    const bytes = await exportBackup(snapshotPersisted('settings.json'));
-    const day = new Date().toISOString().slice(0, 10);
-    return downloadBlob(new Blob([bytes as BlobPart], { type: 'application/zip' }), `foryooru-backup-${day}.zip`);
-}
-
-async function importData(bytes: Uint8Array) {
-    const settings = await importBackup(bytes);
-    if (settings) overwritePersisted('settings.json', settings);
-}
+export const videoUrl = (id: number, _site: Site = settings.site) =>
+    videoBase ? `${videoBase}original/${id}` : imageUrl('original', id);

@@ -1,5 +1,3 @@
-import type { Site } from '$lib/api';
-
 declare global {
     const __BUILD__: string;
 
@@ -9,8 +7,6 @@ declare global {
             ids?: number[];
             depth?: number;
             turned?: boolean;
-            fromUrl?: boolean;
-            site?: Site;
             listPage?: number;
             searching?: boolean;
             menuOpen?: boolean;

@@ -12,13 +12,14 @@
   import TagMenu from '$lib/components/TagMenu.svelte';
   import Toast from '$lib/components/Toast.svelte';
   import { library } from '$lib/state/library.svelte';
-  import { openLinkedPost } from '$lib/state/viewer.svelte';
   import { rememberSearch, staged, urlQuery } from '$lib/state/search.svelte';
   import { scrollPage } from '$lib/pageScroller.svelte';
   import { rememberScroll } from '$lib/scrollMemory';
   import { drawerLayout, linuxDesktop } from '$lib/screen';
   import { settings } from '$lib/state/settings.svelte';
   import { applyTheme } from '$lib/theme';
+  import { listen } from '@tauri-apps/api/event';
+  import type { SyncStatus } from '$lib/api';
   import { onMount, untrack } from 'svelte';
 
   let { children } = $props();
@@ -48,7 +49,11 @@
 
   onMount(() => {
     library.load();
-    void openLinkedPost();
+    // another device's tag, blacklist or saved search changes just arrived
+    const unlisten = listen<SyncStatus>('sync', (event) => {
+      if (!event.payload.running && event.payload.pulled > 0) library.load();
+    });
+    return () => unlisten.then((stop) => stop());
   });
 
   // the engine has started and the app is up, so the plain HTML loading screen from app.html can fade away
@@ -59,35 +64,12 @@
     setTimeout(() => splash.remove(), 300);
   });
 
-  // a new version replaces the old service worker right away, so reload once onto its files.
-  // the very first install also takes control of an uncontrolled page, which is not an update and needs no reload
-  onMount(() => {
-    if (!('serviceWorker' in navigator)) return;
-    let controlled = !!navigator.serviceWorker.controller;
-    let reloading = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!controlled) {
-        controlled = true;
-        return;
-      }
-      if (reloading) return;
-      reloading = true;
-      location.reload();
-    });
-  });
-
-  // an installed app can stay open for days, so look for a new version whenever it comes back into view
-  function checkForUpdate() {
-    if (document.visibilityState !== 'visible' || !('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.getRegistration().then((registration) => registration?.update().catch(() => {}));
-  }
-
   function oncontextmenu(e: MouseEvent) {
     if (e.target instanceof Element && e.target.closest('img, video')) e.preventDefault();
   }
 </script>
 
-<svelte:document {oncontextmenu} onvisibilitychange={checkForUpdate} />
+<svelte:document {oncontextmenu} />
 
 {#if drawerLayout.current}
   <TopBar />

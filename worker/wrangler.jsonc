@@ -1,0 +1,13 @@
+{
+	"name": "foryooru-sync",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-01",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "foryooru",
+			"database_id": "356542a4-2265-407e-9a0e-7765a32ece9d",
+			"migrations_dir": "migrations"
+		}
+	]
+}

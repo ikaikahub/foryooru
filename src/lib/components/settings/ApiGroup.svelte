@@ -10,6 +10,7 @@
   const SITE_OPTIONS = (Object.keys(SITES) as Site[]).map((site) => ({ value: site, label: SITES[site].label }));
 
   let apiError = $state<string>();
+  let loggingIn = $state(false);
   let credentials = $state(settings.apiKey ? `&api_key=${settings.apiKey}&user_id=${settings.userId}` : '');
 
   const parsed = $derived.by(() => {
@@ -19,18 +20,26 @@
   });
   const incomplete = $derived(credentials.trim() !== '' && !parsed);
 
+  async function toggleLogin() {
+    loggingIn = true;
+    apiError = undefined;
+    try {
+      if (settings.gelbooruSession) {
+        await api.gelbooruLogout();
+        settings.gelbooruSession = null;
+      } else {
+        settings.gelbooruSession = await api.gelbooruLogin();
+      }
+    } catch (error) {
+      apiError = errorMessage(error);
+    } finally {
+      loggingIn = false;
+    }
+  }
+
   function saveCredentials() {
     if (!credentials.trim()) [settings.apiKey, settings.userId] = ['', ''];
     else if (parsed) [settings.apiKey, settings.userId] = [parsed.apiKey, parsed.userId];
-    saveSession();
-  }
-
-  // the login cookie is user_id plus pass_hash; user_id is the same one as in the API key line
-  let passHash = $state(settings.gelbooruSession?.passHash ?? '');
-
-  function saveSession() {
-    const hash = passHash.trim();
-    settings.gelbooruSession = hash && settings.userId ? { userId: settings.userId, passHash: hash } : null;
   }
 
   async function switchSite(site: Site) {
@@ -67,20 +76,15 @@
         ? 'That needs both api_key and user_id. Paste the whole line.'
         : 'Gelbooru → My Account → Options → API Access Credentials. Paste the whole line.'}
     </li>
-    <SettingsRow icon="🍪" label="Login cookie">
-      <input
-        class="input input-sm w-44 font-mono"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="Optional"
-        aria-label="Gelbooru pass_hash cookie"
-        bind:value={passHash}
-        oninput={saveSession}
-      />
+    <SettingsRow
+      icon="🍪"
+      label="Gelbooru login"
+      detail={settings.gelbooruSession
+        ? `Logged in as user ${settings.gelbooruSession.userId}.`
+        : "Log in on Gelbooru's site so favourites can sync. Only the login cookie is kept."}
+    >
+      <button class="btn btn-sm" disabled={loggingIn} onclick={toggleLogin}>{settings.gelbooruSession ? 'Log out' : 'Log in'}</button>
     </SettingsRow>
-    <li class={[NOTE, 'opacity-70']}>
-      Optionally provide the value of the "pass_hash" cookie so that new favourites will sync. Must be from the same account as the api key.
-    </li>
   {:else}
     <SettingsRow icon="👤" label="Username">
       <input class="input input-sm w-36" autocomplete="off" placeholder="Optional" aria-label="Danbooru username" bind:value={settings.danbooruLogin} />
@@ -95,7 +99,7 @@
         bind:value={settings.danbooruApiKey}
       />
     </SettingsRow>
-    <li class={[NOTE, 'opacity-70']}>Optionally provide an api key for syncing new favourite and increased limits (if youre a paying member).</li>
+    <li class={[NOTE, 'opacity-70']}>Optional: without them Danbooru works anonymously, with up to 2 tags per search.</li>
   {/if}
   {#if apiError}<li class={[NOTE, 'text-error']}>{apiError}</li>{/if}
 </SettingsGroup>

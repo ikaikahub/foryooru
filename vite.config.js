@@ -1,13 +1,14 @@
-import { defineConfig } from 'vite';
-import { sveltekit } from '@sveltejs/kit/vite';
-import tailwindcss from '@tailwindcss/vite';
-// @ts-ignore -- node builtins are untyped here, the app's tsconfig has no @types/node
-import { execSync } from 'node:child_process';
+import { defineConfig } from "vite";
+import { sveltekit } from "@sveltejs/kit/vite";
+import tailwindcss from '@tailwindcss/vite'
+// @ts-expect-error type error without @types/node package
+import process from "node:process";
+// @ts-expect-error node builtins are untyped here
+import { execSync } from "node:child_process";
 
-/** @type {{ GITHUB_RUN_NUMBER?: string }} */
-const env = /** @type {any} */ (globalThis).process?.env ?? {};
+const host = process.env.TAURI_DEV_HOST;
 
-// reads as '#42 8b6e960' on a deployed build and 'dev 8b6e960+' when the tree is dirty
+// reads as 'v34 8b6e960' on a release, '#42 8b6e960' on a manual CI run and 'dev 8b6e960+' when the tree is dirty
 function buildLabel() {
   let commit = '';
   try {
@@ -18,12 +19,40 @@ function buildLabel() {
   } catch {
     // no git available, the run number still identifies a deploy
   }
-  return [env.GITHUB_RUN_NUMBER ? `#${env.GITHUB_RUN_NUMBER}` : 'dev', commit].filter(Boolean).join(' ');
+  let build = 'dev';
+  if (process.env.GITHUB_REF_TYPE === 'tag') build = process.env.GITHUB_REF_NAME;
+  else if (process.env.GITHUB_RUN_NUMBER) build = `#${process.env.GITHUB_RUN_NUMBER}`;
+  return [build, commit].filter(Boolean).join(' ');
 }
 
-export default defineConfig({
-  plugins: [sveltekit(), tailwindcss()],
-  // the engine's wasm and worker are prebuilt into src/lib/engine, vite only bundles them
-  worker: { format: 'es' },
+// https://vite.dev/config/
+export default defineConfig(() => ({
+  plugins: [
+    sveltekit(),
+    tailwindcss(),
+  ],
+
   define: { __BUILD__: JSON.stringify(buildLabel()) },
-});
+
+  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+  //
+  // 1. prevent Vite from obscuring rust errors
+  clearScreen: false,
+  // 2. tauri expects a fixed port, fail if that port is not available
+  server: {
+    port: 1430,
+    strictPort: true,
+    host: host || "127.0.0.1",
+    hmr: host
+      ? {
+          protocol: "ws",
+          host,
+          port: 1431,
+        }
+      : undefined,
+    watch: {
+      // 3. tell Vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+}));

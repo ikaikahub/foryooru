@@ -1,3 +1,0 @@
-# rand's random numbers come from the browser's crypto API in wasm builds
-[target.wasm32-unknown-unknown]
-rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
