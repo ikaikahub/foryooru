@@ -1,7 +1,8 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 const MIGRATIONS: &[&str] = &["
     CREATE TABLE tags (
@@ -198,6 +199,8 @@ pub const TABLES: &[&str] = &[
     "tags",
 ];
 
+const CHECKPOINT_EVERY: Duration = Duration::from_secs(30);
+
 pub struct Db {
     path: PathBuf,
     main: Mutex<Connection>,
@@ -249,6 +252,33 @@ pub fn database_files(path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+// sqlite's automatic checkpoint runs inside whichever commit fills the log, while the app's lock on that connection
+// is held. copying the log back from a connection of its own keeps saves short, and a passive checkpoint never
+// blocks reads or writes. it stops once the site's database is closed
+pub fn checkpoint_in_background(db: &Arc<Db>) {
+    let db = Arc::downgrade(db);
+    crate::platform::spawn(async move {
+        loop {
+            crate::platform::sleep(CHECKPOINT_EVERY).await;
+            let Some(db) = db.upgrade() else {
+                return;
+            };
+            let checkpoint = tauri::async_runtime::spawn_blocking(move || -> Result<()> {
+                db.connect()?
+                    .execute_batch("PRAGMA wal_checkpoint(PASSIVE);")?;
+                Ok(())
+            });
+            let checkpointed = checkpoint
+                .await
+                .map_err(Error::from)
+                .and_then(|result| result);
+            if let Err(error) = checkpointed {
+                crate::platform::log(&format!("Checkpointing the database failed: {error}"));
+            }
+        }
+    });
+}
+
 fn connect(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch(
@@ -256,7 +286,9 @@ fn connect(path: &Path) -> Result<Connection> {
          PRAGMA synchronous = NORMAL;
          PRAGMA cache_size = -32768;
          PRAGMA foreign_keys = ON;
-         PRAGMA busy_timeout = 10000;",
+         PRAGMA busy_timeout = 10000;
+         PRAGMA wal_autocheckpoint = 0;
+         PRAGMA journal_size_limit = 16777216;",
     )?;
     Ok(conn)
 }

@@ -52,6 +52,7 @@ impl Core {
         let db = Arc::new(Db::open(
             &app.path().app_data_dir()?.join(site.database_file()),
         )?);
+        db::checkpoint_in_background(&db);
         activity::prune(&db.conn())?;
         let core = Arc::new(Core {
             app: app.clone(),
