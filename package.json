@@ -1,6 +1,6 @@
 {
   "name": "foryooru",
-  "version": "0.0.11",
+  "version": "0.0.10",
   "description": "",
   "type": "module",
   "packageManager": "pnpm@12.16.1",
