@@ -112,8 +112,7 @@
 
 <div class="mb-2 flex flex-wrap items-center gap-2">
   <h1 class="mr-auto min-w-0 text-lg font-semibold break-words">
-    🎨 Artists{#if finding}
-      related to <span class="font-mono">{artistChips.join(' ')}</span>{/if}
+    🎨 Artists{#if finding}&nbsp;related to <span class="font-mono">{artistChips.join(' ')}</span>{/if}
   </h1>
   {#if refreshing}
     <span class="flex items-center gap-1.5 text-sm opacity-70">

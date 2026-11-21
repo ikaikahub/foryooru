@@ -9,7 +9,10 @@
 
 <!-- the Artists page's search for which artists to show, above the usual tag box that filters their posts -->
 <div class="flex flex-col gap-1">
-  <TagInput editor={artistSearch} placeholder="Find artists…" {onsubmit} />
+  <div class="flex gap-1">
+    <div class="min-w-0 flex-1"><TagInput editor={artistSearch} placeholder="Find artists…" {onsubmit} /></div>
+    <button type="button" class="btn btn-primary btn-sm" onmousedown={(e) => e.preventDefault()} onclick={onsubmit}>Search</button>
+  </div>
   {#if artistSearch.chips.length}
     <div class="flex flex-wrap gap-1">
       {#each artistSearch.chips as chip (chip.tag)}
