@@ -35,9 +35,22 @@ impl Kind {
     }
 }
 
-async fn resolve(core: &Arc<Core>, id: i64) -> Result<MediaUrls> {
-    let mut urls = catalogue::media_urls(&core.db.conn(), id)?.ok_or(Error::PostNotFound)?;
-    if !urls.partial || urls.media_resolved {
+// every site's urls for the post, Danbooru's first
+async fn resolve(core: &Arc<Core>, id: i64) -> Result<Vec<MediaUrls>> {
+    let mut resolved = Vec::with_capacity(2);
+    let rows = catalogue::media_urls(&core.db.conn(), id)?;
+    for urls in rows {
+        resolved.push(resolve_partial(core, urls).await?);
+    }
+    if resolved.is_empty() {
+        return Err(Error::PostNotFound);
+    }
+    Ok(resolved)
+}
+
+// posts from a BooruView file only have their md5, so their Gelbooru urls are found by asking its CDN
+async fn resolve_partial(core: &Arc<Core>, mut urls: MediaUrls) -> Result<MediaUrls> {
+    if !urls.partial || urls.media_resolved || urls.site != Site::Gelbooru {
         return Ok(urls);
     }
     let directory = format!("{}/{}", &urls.md5[..2], &urls.md5[2..4]);
@@ -64,32 +77,34 @@ async fn resolve(core: &Arc<Core>, id: i64) -> Result<MediaUrls> {
         }
     }
     urls.media_resolved = !urls.file_url.is_empty();
-    catalogue::save_resolved_media(
-        &core.db.conn(),
-        id,
-        &urls.sample_url,
-        &urls.file_url,
-        urls.media_resolved,
-    )?;
+    catalogue::save_resolved_media(&core.db.conn(), &urls)?;
     Ok(urls)
 }
 
+// fetches the site's own copy of rows stored from partial listings
 pub async fn complete_partial(core: &Arc<Core>, id: i64) -> Result<()> {
-    let partial = catalogue::media_urls(&core.db.conn(), id)?.is_some_and(|urls| urls.partial);
-    if !partial {
-        return Ok(());
-    }
-    let (raws, _) = core.booru.search(&format!("id:{id}"), 0, None).await?;
-    if !raws.is_empty() {
-        let stored = catalogue::store_posts(&mut core.db.conn(), &raws, false)?;
-        catalogue::after_store(core, &stored);
+    let rows = catalogue::partial_rows(&core.db.conn(), id)?;
+    for (site, site_id) in rows {
+        if !core.can_search(site) {
+            continue;
+        }
+        let (raws, _) = core.booru(site).search(&format!("id:{site_id}"), 0, None).await?;
+        if !raws.is_empty() {
+            let stored = catalogue::store_posts(&mut core.db.conn(), site, &raws, false)?;
+            catalogue::after_store(core, &stored);
+        }
     }
     Ok(())
 }
 
 pub async fn original_url(core: &Arc<Core>, id: i64) -> Result<String> {
     let _ = complete_partial(core, id).await;
-    Ok(resolve(core, id).await?.file_url)
+    Ok(resolve(core, id)
+        .await?
+        .into_iter()
+        .map(|urls| urls.file_url)
+        .find(|url| !url.is_empty())
+        .unwrap_or_default())
 }
 
 struct Source {
@@ -153,29 +168,37 @@ fn remember_file(conn: &Connection, id: i64, site: Site, present: bool) -> Resul
 
 // the CDNs to try, the one that can answer soonest first. ties split by md5 so a page's downloads go half to each
 async fn sources(core: &Arc<Core>, id: i64, kind: Kind) -> Result<(MediaUrls, Vec<Source>)> {
-    let urls = resolve(core, id).await?;
+    let mut rows = resolve(core, id).await?;
     let mut sources = Vec::with_capacity(2);
-    let known = known_url(kind, &urls);
-    if !known.is_empty() {
-        sources.push(Source {
-            site: Site::of_url(&known),
-            url: known,
-            guessed: false,
-        });
+    for urls in &rows {
+        let known = known_url(kind, urls);
+        if !known.is_empty() {
+            sources.push(Source {
+                site: Site::of_url(&known),
+                url: known,
+                guessed: false,
+            });
+        }
     }
-    let other = core.site.other();
-    let has_file = site_has_file(&core.db.conn(), id, other)?;
-    // samples and originals are only guessed once a thumbnail showed the other site has the file
-    let worth_guessing = match kind {
-        Kind::Thumbnail => has_file != Some(false),
-        Kind::Sample | Kind::Original => has_file == Some(true),
-    };
-    if worth_guessing && let Some(url) = guessed_url(other, kind, &urls) {
-        sources.push(Source {
-            url,
-            site: other,
-            guessed: true,
-        });
+    let known_sites: Vec<Site> = rows.iter().map(|urls| urls.site).collect();
+    let urls = rows.swap_remove(0);
+    for site in Site::ALL {
+        if known_sites.contains(&site) {
+            continue;
+        }
+        let has_file = site_has_file(&core.db.conn(), id, site)?;
+        // samples and originals are only guessed once a thumbnail showed the site has the file
+        let worth_guessing = match kind {
+            Kind::Thumbnail => has_file != Some(false),
+            Kind::Sample | Kind::Original => has_file == Some(true),
+        };
+        if worth_guessing && let Some(url) = guessed_url(site, kind, &urls) {
+            sources.push(Source {
+                url,
+                site,
+                guessed: true,
+            });
+        }
     }
     let danbooru_first = urls.md5.as_bytes().first().is_some_and(|digit| digit % 2 == 0);
     sources.sort_by_key(|source| {
@@ -310,7 +333,7 @@ async fn serve_original(
 ) -> Result<Response<Vec<u8>>> {
     let _ = complete_partial(core, id).await;
     let (urls, sources) = sources(core, id, Kind::Original).await?;
-    if urls.file_url.is_empty() {
+    if sources.is_empty() {
         return Err(Error::PostNotFound);
     }
     if range.is_none() && catalogue::media_of(&urls.file_url) == Media::Gif {
@@ -348,6 +371,8 @@ mod tests {
 
     fn urls(file: &str, width: i64) -> MediaUrls {
         MediaUrls {
+            site: Site::Danbooru,
+            site_id: 1,
             md5: "e4949966c2e5037c4faf887cb29abb15".to_owned(),
             preview_url: String::new(),
             sample_url: String::new(),

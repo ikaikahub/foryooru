@@ -3,7 +3,7 @@ use crate::autocomplete;
 use crate::backup;
 use crate::booru::{Order, Site};
 use crate::catalogue::{self, Post, PostDetail, SEARCH_PAGE_MAX_AGE, Tag};
-use crate::core::{Core, CurrentCore, Sites, Startup};
+use crate::core::{Core, CurrentCore, Startup};
 use crate::corpus::Corpus;
 use crate::db::now_ms;
 use crate::engine;
@@ -48,30 +48,18 @@ async fn with_corpus<T: Send + 'static>(
     .await?
 }
 
-async fn complete_partial(core: &Arc<Core>, id: i64) -> Result<()> {
-    if !catalogue::is_partial(&core.db.conn(), id)? {
-        return Ok(());
-    }
-    let (raws, _) = core.booru.search(&format!("id:{id}"), 0, None).await?;
-    if !raws.is_empty() {
-        let stored = catalogue::store_posts(&mut core.db.conn(), &raws, false)?;
-        catalogue::after_store(core, &stored);
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn browse(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<Listing> {
     let core = core.inner();
     let blacklist = library::tag_names(&core.db.conn(), TagList::Blacklist)?;
     let search = Search::parse(&chips);
-    let query = core.booru.render(&search.site_query(&blacklist)).await?;
-    let stored = catalogue::search_page(core, &query, page, SEARCH_PAGE_MAX_AGE).await?;
+    let (site, query) = core.route(&search.site_query(&blacklist), page).await?;
+    let stored = catalogue::search_page(core, site, &query, page, SEARCH_PAGE_MAX_AGE).await?;
     fetching::seed_popular(core);
     let conn = core.db.conn();
     let (kept, hidden) = library::without_blacklisted(&conn, stored.ids)?;
     let mut posts = catalogue::posts(&conn, &kept)?;
-    if search.sort == Some(Order::Popular) && !core.booru.ranks_popular() {
+    if search.sort == Some(Order::Popular) && !core.booru(site).ranks_popular() {
         let now = now_ms();
         posts.sort_by(|a, b| {
             engine::hotness(b.score, b.posted_at, now).total_cmp(&engine::hotness(
@@ -83,7 +71,7 @@ pub async fn browse(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<
     }
     Ok(Listing {
         posts,
-        pages: ((stored.total.min(core.booru.max_offset()) + LISTING_PAGE_SIZE - 1)
+        pages: ((stored.total.min(core.booru(site).max_offset()) + LISTING_PAGE_SIZE - 1)
             / LISTING_PAGE_SIZE)
             .max(1),
         hidden,
@@ -364,7 +352,7 @@ pub async fn post_family(core: CurrentCore, id: i64, chips: Vec<String>) -> Resu
 
 #[tauri::command]
 pub async fn post_detail(core: CurrentCore, id: i64) -> Result<PostDetail> {
-    if let Err(error) = complete_partial(core.inner(), id).await {
+    if let Err(error) = media::complete_partial(core.inner(), id).await {
         crate::platform::log(&format!("Couldn't complete post {id}: {error}"));
     }
     catalogue::post_details(&core.db.conn(), &[id])?
@@ -372,16 +360,9 @@ pub async fn post_detail(core: CurrentCore, id: i64) -> Result<PostDetail> {
         .ok_or(Error::PostNotFound)
 }
 
-// opens one post by id, fetching it if this database has never seen it
+// opens one post by id, for an address the feed was left at
 #[tauri::command]
 pub async fn open_post(core: CurrentCore, id: i64) -> Result<PostDetail> {
-    if catalogue::posts(&core.db.conn(), &[id])?.is_empty() {
-        let (raws, _) = core.booru.search(&format!("id:{id}"), 0, None).await?;
-        if !raws.is_empty() {
-            let stored = catalogue::store_posts(&mut core.db.conn(), &raws, false)?;
-            catalogue::after_store(core.inner(), &stored);
-        }
-    }
     post_detail(core, id).await
 }
 
@@ -395,9 +376,20 @@ pub fn toggle_like(core: CurrentCore, id: i64, chips: Vec<String>) -> Result<Pos
     Ok(state)
 }
 
+// favourites the post on every site the user is logged in to that has it
 #[tauri::command]
 pub async fn set_site_favourite(core: CurrentCore, id: i64, favourite: bool) -> Result<()> {
-    core.booru.set_favourite(id, favourite).await
+    let ids = catalogue::site_ids(&core.db.conn(), id)?;
+    let mut failure = None;
+    for site in core.logged_in_sites() {
+        let Some(site_id) = ids.get(site) else {
+            continue;
+        };
+        if let Err(error) = core.booru(site).set_favourite(site_id, favourite).await {
+            failure = Some(error);
+        }
+    }
+    failure.map_or(Ok(()), Err)
 }
 
 #[tauri::command]
@@ -535,7 +527,12 @@ pub async fn suggest_tags_online(core: CurrentCore, typed: String) -> Result<Vec
     if search::meta_completions(&typed).is_some() {
         return Ok(Vec::new());
     }
-    Ok(autocomplete::suggest(&core.inner().http, core.inner().site, &typed).await)
+    let site = if core.can_search(Site::Gelbooru) {
+        Site::Gelbooru
+    } else {
+        Site::Danbooru
+    };
+    Ok(autocomplete::suggest(&core.inner().http, site, &typed).await)
 }
 
 #[tauri::command]
@@ -623,13 +620,8 @@ pub fn import_status(core: CurrentCore) -> ImportStatus {
 }
 
 #[tauri::command]
-pub fn import_favourites(core: CurrentCore, user: String) -> Result<()> {
-    import::favourites(core.inner(), user)
-}
-
-#[tauri::command]
-pub fn set_site(app: AppHandle, sites: State<'_, Sites>, site: Site) -> Result<()> {
-    sites.switch(&app, site)
+pub fn import_favourites(core: CurrentCore, site: Site, user: String) -> Result<()> {
+    import::favourites(core.inner(), site, user)
 }
 
 #[tauri::command]
@@ -745,11 +737,6 @@ async fn off_main_thread(
 #[tauri::command]
 pub async fn reset_database(core: CurrentCore) -> Result<()> {
     off_main_thread(core.inner(), storage::reset_database).await
-}
-
-#[tauri::command]
-pub async fn reset_all_databases(core: CurrentCore) -> Result<()> {
-    off_main_thread(core.inner(), storage::reset_all_databases).await
 }
 
 #[tauri::command]

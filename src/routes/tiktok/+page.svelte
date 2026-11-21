@@ -5,9 +5,8 @@
 
   const query = $derived(urlQuery(page.url));
   const initialPost = $derived(Number(page.url.searchParams.get('post')) || null);
-  const initialSite = $derived(page.url.searchParams.get('site'));
 </script>
 
 {#key query}
-  <Feed chips={splitQuery(query)} {initialPost} {initialSite} />
+  <Feed chips={splitQuery(query)} {initialPost} />
 {/key}

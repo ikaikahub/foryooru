@@ -69,12 +69,14 @@
   const MIDDLE_BUTTON = 1;
 
   function open(e: MouseEvent, post: Post) {
-    if (e.ctrlKey || e.metaKey) window.open(postUrl(post.id), '_blank', 'noopener');
+    const url = postUrl(post);
+    if ((e.ctrlKey || e.metaKey) && url) window.open(url, '_blank', 'noopener');
     else viewer.open(post.id, posts.map((p) => p.id), pageTurner);
   }
 
   function openElsewhere(e: MouseEvent, post: Post) {
-    if (e.button === MIDDLE_BUTTON) window.open(postUrl(post.id), '_blank', 'noopener');
+    const url = postUrl(post);
+    if (e.button === MIDDLE_BUTTON && url) window.open(url, '_blank', 'noopener');
   }
 </script>
 

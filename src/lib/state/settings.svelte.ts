@@ -1,4 +1,4 @@
-import type { GelbooruSession, SaveFolder, Site } from '$lib/api';
+import type { GelbooruSession, SaveFolder } from '$lib/api';
 import type { Theme } from '$lib/theme';
 import { persisted } from './persisted.svelte';
 
@@ -7,7 +7,6 @@ export const DEFAULT_SIDEBAR_WIDTH = 300;
 
 const saved = persisted('settings.json', {
     theme: 'system' as Theme,
-    site: 'danbooru' as Site,
     apiKey: '',
     userId: '',
     danbooruLogin: '',
@@ -30,9 +29,6 @@ const saved = persisted('settings.json', {
 
 export const settings = saved.state;
 
-const RETIRED_SITE = 'kimochii';
-
 export async function restoreSettings() {
     await saved.restore();
-    if ((settings.site as string) === RETIRED_SITE) settings.site = 'gelbooru';
 }

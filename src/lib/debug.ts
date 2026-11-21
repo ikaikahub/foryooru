@@ -5,11 +5,10 @@ function formatDuration(ms: number) {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
 }
 
-export function debugReport(spans: TimingSpan[], site: string) {
+export function debugReport(spans: TimingSpan[]) {
   const header = [
     `foryooru debug ${new Date().toISOString()}`,
     `build ${BUILD_LABEL}`,
-    `site ${site}`,
     navigator.userAgent,
     `${spans.length} spans`,
   ];

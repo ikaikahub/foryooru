@@ -478,7 +478,7 @@ mod tests {
             posted_at: Some(posted_at),
             lineage: None,
         };
-        catalogue::store_posts(conn, &[raw], false).unwrap();
+        catalogue::store_posts(conn, crate::booru::Site::Danbooru, &[raw], false).unwrap();
     }
 
     fn follow(conn: &Connection, name: &str, at: i64) {

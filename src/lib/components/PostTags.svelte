@@ -1,51 +1,46 @@
 <script module lang="ts">
-  const fileSizes = new Map<string, Promise<number | null>>();
+  const fileSizes = new Map<number, Promise<number | null>>();
 
-  function sizeOf(site: Site, id: number) {
-    const key = `${site}:${id}`;
-    let size = fileSizes.get(key);
+  function sizeOf(id: number) {
+    let size = fileSizes.get(id);
     if (!size) {
-      size = api.fileSize(id, site).catch((error) => {
-        fileSizes.delete(key);
+      size = api.fileSize(id).catch((error) => {
+        fileSizes.delete(id);
         console.error('Reading the file size failed', error);
         return null;
       });
-      fileSizes.set(key, size);
+      fileSizes.set(id, size);
     }
     return size;
   }
 </script>
 
 <script lang="ts">
-  import { api, type PostDetail, type Site } from '$lib/api';
+  import { api, type PostDetail } from '$lib/api';
   import { formatBytes } from '$lib/format';
   import { signal } from '$lib/signals';
   import { library } from '$lib/state/library.svelte';
   import type { TagTarget } from '$lib/state/search.svelte';
-  import { settings } from '$lib/state/settings.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
   import { tagText } from '$lib/tags';
   import PostFamily from './PostFamily.svelte';
   import SectionTitle from './SectionTitle.svelte';
 
-  let { post, site = settings.site, target, onrelated }: { post: PostDetail; site?: Site; target: TagTarget; onrelated?: (id: number, ids: number[]) => void } = $props();
-
-  const own = $derived(site === settings.site);
+  let { post, target, onrelated }: { post: PostDetail; target: TagTarget; onrelated?: (id: number, ids: number[]) => void } = $props();
 
   let fileSize = $state<number | null>(null);
 
   $effect(() => {
     const id = post.id;
-    const where = site;
     fileSize = null;
-    sizeOf(where, id).then((size) => {
-      if (post.id === id && site === where) fileSize = size;
+    sizeOf(id).then((size) => {
+      if (post.id === id) fileSize = size;
     });
   });
 </script>
 
 <div class="text-sm">
-  {#if own}<PostFamily id={post.id} onopen={onrelated} />{/if}
+  <PostFamily id={post.id} onopen={onrelated} />
   {#each post.tagGroups as group (group.label)}
     <SectionTitle>{group.label}</SectionTitle>
     <ul>
@@ -62,7 +57,7 @@
               blacklisted && 'line-through opacity-60',
             ]}
             onclick={(e) => {
-              if (own) signal(post.id, 'tag', tag.name);
+              signal(post.id, 'tag', tag.name);
               tagMenu.show(e.currentTarget, tag.name, tag.type, target);
             }}
           >

@@ -1,4 +1,4 @@
-use crate::core::Sites;
+use crate::core::Core;
 use crate::error::{Error, Result};
 use crate::media;
 use rand::Rng;
@@ -39,7 +39,7 @@ fn answer(app: &AppHandle, prefix: &str, request: Request) {
         .iter()
         .find(|header| header.field.equiv("Range"))
         .map(|header| header.value.to_string());
-    let core = app.state::<Sites>().current();
+    let core = app.state::<std::sync::Arc<Core>>().inner().clone();
     let response = tauri::async_runtime::block_on(media::respond_to(core, &path, range.as_deref()));
     let (parts, body) = response.into_parts();
     let headers = parts

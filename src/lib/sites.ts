@@ -1,5 +1,4 @@
-import type { Site } from '$lib/api';
-import { settings } from '$lib/state/settings.svelte';
+import type { Post, Site } from '$lib/api';
 
 type SiteInfo = { label: string; postUrl: (id: number) => string };
 
@@ -8,6 +7,9 @@ export const SITES: Record<Site, SiteInfo> = {
     danbooru: { label: 'Danbooru', postUrl: (id) => `https://danbooru.donmai.us/posts/${id}` },
 };
 
-export const currentSite = () => SITES[settings.site];
-
-export const postUrl = (id: number) => currentSite().postUrl(id);
+// the post's page on Danbooru when it has one, else on Gelbooru
+export function postUrl(post: Post) {
+    const { danbooru, gelbooru } = post.sites;
+    if (danbooru !== null) return SITES.danbooru.postUrl(danbooru);
+    return gelbooru === null ? null : SITES.gelbooru.postUrl(gelbooru);
+}

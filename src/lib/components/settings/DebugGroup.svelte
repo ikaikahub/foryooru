@@ -16,7 +16,7 @@
   async function copyLogs() {
     copying = true;
     try {
-      await navigator.clipboard.writeText(debugReport(await api.timings(), settings.site));
+      await navigator.clipboard.writeText(debugReport(await api.timings()));
       toast.show('Debug logs copied');
     } catch (error) {
       toast.show(errorMessage(error));

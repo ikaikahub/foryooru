@@ -3,7 +3,6 @@
   import { api, errorMessage, type ImportStatus, type StorageUsage, type Usage } from '$lib/api';
   import { formatBytes } from '$lib/format';
   import { announce } from '$lib/postActions';
-  import { currentSite } from '$lib/sites';
   import { library } from '$lib/state/library.svelte';
   import { rememberedSearch, searchHref } from '$lib/state/search.svelte';
   import { settings } from '$lib/state/settings.svelte';
@@ -30,16 +29,11 @@
   let usage = $state<StorageUsage>();
   let usageError = $state<string>();
   let importStatus = $state<ImportStatus>();
-  let importUser = $state('');
+  let gelbooruUser = $state(settings.userId);
+  let danbooruUser = $state(settings.danbooruLogin);
   let fileInput = $state<HTMLInputElement>();
   let working = $state<string | null>(null);
   let defaultSaveFolder = $state<string>();
-
-  const onGelbooru = $derived(settings.site === 'gelbooru');
-
-  $effect(() => {
-    importUser = onGelbooru ? settings.userId : settings.danbooruLogin;
-  });
 
   function refreshUsage() {
     api.storageUsage().then(
@@ -112,7 +106,7 @@
   async function resetEverything() {
     await getCurrentWebview().clearAllBrowsingData();
     await api.clearCache();
-    await api.resetAllDatabases();
+    await api.resetDatabase();
     await resetSettings();
   }
 
@@ -153,22 +147,22 @@
         {/if}
       </li>
     {:else}
-      <SettingsRow icon="📥" label="{currentSite().label} user">
-        <input
-          class="input input-sm w-28"
-          inputmode={onGelbooru ? 'numeric' : 'text'}
-          placeholder={onGelbooru ? 'User ID' : 'Username'}
-          aria-label="{currentSite().label} user"
-          bind:value={importUser}
-        />
-        <button class="btn btn-sm" disabled={!importUser.trim()} onclick={() => act(() => api.importFavourites(importUser.trim()))}>Import</button>
+      <SettingsRow icon="📥" label="Danbooru user">
+        <input class="input input-sm w-28" placeholder="Username" aria-label="Danbooru user" bind:value={danbooruUser} />
+        <button class="btn btn-sm" disabled={!danbooruUser.trim()} onclick={() => act(() => api.importFavourites('danbooru', danbooruUser.trim()))}
+          >Import</button
+        >
       </SettingsRow>
-      {#if onGelbooru}
-        <SettingsRow icon="📄" label="Booruview export">
-          <input bind:this={fileInput} type="file" accept=".json,application/json" class="hidden" onchange={importFile} />
-          <button class="btn btn-sm" onclick={() => fileInput?.click()}>📂 Choose file</button>
-        </SettingsRow>
-      {/if}
+      <SettingsRow icon="📥" label="Gelbooru user">
+        <input class="input input-sm w-28" inputmode="numeric" placeholder="User ID" aria-label="Gelbooru user" bind:value={gelbooruUser} />
+        <button class="btn btn-sm" disabled={!gelbooruUser.trim()} onclick={() => act(() => api.importFavourites('gelbooru', gelbooruUser.trim()))}
+          >Import</button
+        >
+      </SettingsRow>
+      <SettingsRow icon="📄" label="Booruview export">
+        <input bind:this={fileInput} type="file" accept=".json,application/json" class="hidden" onchange={importFile} />
+        <button class="btn btn-sm" onclick={() => fileInput?.click()}>📂 Choose file</button>
+      </SettingsRow>
       {#if importStatus?.error}
         <li class={[NOTE, 'text-error']}>Import stopped after {importStatus.imported}: {importStatus.error}</li>
       {:else if importStatus?.source}
@@ -211,15 +205,15 @@
         onclick={() => confirmed('Delete every cached image?', api.clearCache, 'Clearing image cache…')}>Clear</button
       >
     </SettingsRow>
-    <SettingsRow icon="🗄️" label="{currentSite().label} database" detail={describe(usage?.database)}>
+    <SettingsRow icon="🗄️" label="Database" detail={describe(usage?.database)}>
       <button
         class="btn btn-sm"
         disabled={working !== null}
         onclick={() =>
           confirmed(
-            `Delete all ${currentSite().label} posts, likes, dislikes, favourite tags, saved searches and the blacklist?`,
+            'Delete all posts, likes, dislikes, favourite tags, saved searches and the blacklist?',
             reloadAfter(api.resetDatabase),
-            `Resetting the ${currentSite().label} database…`,
+            'Resetting the database…',
           )}
         >Reset</button
       >

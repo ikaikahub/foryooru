@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { imageUrl, showsOriginal, videoUrl, type Post, type Site } from '$lib/api';
+  import { imageUrl, showsOriginal, videoUrl, type Post } from '$lib/api';
   import { image, playWhile } from '$lib/attachments';
   import { signal } from '$lib/signals';
   import { postMenu } from '$lib/state/postMenu.svelte';
-  import { settings } from '$lib/state/settings.svelte';
   import { zoomable } from '$lib/zoom';
   import type { Snippet } from 'svelte';
 
@@ -12,7 +11,6 @@
     active,
     preload = false,
     controls = false,
-    site = settings.site,
     img = $bindable(),
     onloaded,
     children,
@@ -21,7 +19,6 @@
     active: boolean;
     preload?: boolean;
     controls?: boolean;
-    site?: Site;
     img?: HTMLImageElement;
     onloaded?: () => void;
     children?: Snippet;
@@ -37,13 +34,13 @@
   function noticeLoop(video: HTMLVideoElement) {
     if (active && !looped && video.currentTime < playedUntil - LOOP_GAP_S) {
       looped = true;
-      if (site === settings.site) signal(post.id, 'videoLooped');
+      signal(post.id, 'videoLooped');
     }
     playedUntil = video.currentTime;
   }
 
-  const sample = $derived(imageUrl('sample', post.id, site));
-  const original = $derived(imageUrl('original', post.id, site));
+  const sample = $derived(imageUrl('sample', post.id));
+  const original = $derived(imageUrl('original', post.id));
   const ratio = $derived((post.width || post.previewWidth || 1) / (post.height || post.previewHeight || 1));
   const width = $derived(post.width ? `min(100cqw, 100cqh * ${ratio}, ${post.width}px)` : `min(100cqw, 100cqh * ${ratio})`);
 
@@ -56,14 +53,14 @@
     painted = false;
   });
 
-  const source = $derived(started ? videoUrl(post.id, site) : undefined);
+  const source = $derived(started ? videoUrl(post.id) : undefined);
 </script>
 
 <div
   class="relative bg-cover bg-center"
   style:width
   style:aspect-ratio={ratio}
-  style:background-image={painted ? undefined : `url(${imageUrl('thumbnail', post.id, site)})`}
+  style:background-image={painted ? undefined : `url(${imageUrl('thumbnail', post.id)})`}
 >
   {#if post.media === 'video'}
     <video
@@ -89,7 +86,7 @@
       oncontextmenu={(e) => postMenu.open(e, post)}
       onload={(e) => {
         painted = true;
-        if (post.media === 'gif' && showsOriginal(e.currentTarget, post.id, site)) onloaded?.();
+        if (post.media === 'gif' && showsOriginal(e.currentTarget, post.id)) onloaded?.();
       }}
       {@attach image(post.media === 'gif' && (active || preload) ? original : sample)}
       {@attach zoomable(original)}

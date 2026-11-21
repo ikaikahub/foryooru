@@ -132,7 +132,7 @@ struct Credentials {
 pub struct Danbooru {
     app: AppHandle,
     db: Arc<Db>,
-    requester: Requester,
+    pub(crate) requester: Requester,
     tag_limit: Mutex<Option<(Credentials, usize)>>,
 }
 
@@ -160,6 +160,10 @@ impl Danbooru {
             (!credentials.login.is_empty() && !credentials.api_key.is_empty())
                 .then_some(credentials),
         )
+    }
+
+    pub fn logged_in(&self) -> bool {
+        self.credentials().ok().flatten().is_some()
     }
 
     pub async fn tag_limit(&self) -> Result<usize> {
@@ -287,7 +291,11 @@ impl Danbooru {
         Ok(self
             .db
             .conn()
-            .query_row("SELECT site_count FROM tags WHERE name = ?1", [tag], |row| row.get::<_, Option<i64>>(0))
+            .query_row(
+                "SELECT site_count FROM tags WHERE name = ?1 AND count_site = 'danbooru'",
+                [tag],
+                |row| row.get::<_, Option<i64>>(0),
+            )
             .optional()?
             .flatten())
     }

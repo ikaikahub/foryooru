@@ -1,16 +1,14 @@
 <script lang="ts">
-  import type { PostDetail, Site } from '$lib/api';
+  import type { PostDetail } from '$lib/api';
   import { touchDrag } from '$lib/attachments';
   import { swipeAxis, swipeSpeed, trackMove, type Moves } from '$lib/motion';
   import type { TagTarget } from '$lib/state/search.svelte';
-  import { settings } from '$lib/state/settings.svelte';
   import ErrorNote from './ErrorNote.svelte';
   import PostTags from './PostTags.svelte';
   import ViewerActions from './ViewerActions.svelte';
 
   let {
     post,
-    site = settings.site,
     target,
     actions = true,
     turnError = null,
@@ -19,7 +17,6 @@
     onrelated,
   }: {
     post: PostDetail | null;
-    site?: Site;
     target: TagTarget;
     actions?: boolean;
     turnError?: unknown;
@@ -61,8 +58,8 @@
   <div class="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 pb-6" bind:this={list}>
     {#if turnError}<ErrorNote error={turnError} />{/if}
     {#if post && !post.blockedBy.length}
-      {#if actions}<div class="flex flex-wrap justify-center gap-1.5 py-2"><ViewerActions {post} {site} /></div>{/if}
-      <PostTags {post} {target} {onrelated} {site} />
+      {#if actions}<div class="flex flex-wrap justify-center gap-1.5 py-2"><ViewerActions {post} /></div>{/if}
+      <PostTags {post} {target} {onrelated} />
     {/if}
   </div>
 </div>

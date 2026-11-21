@@ -1,5 +1,4 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { settings } from '$lib/state/settings.svelte';
 
 export type TagType = 'general' | 'artist' | 'copyright' | 'character' | 'metadata' | 'deprecated';
 export type Tag = { name: string; type: TagType | null; count: number | null };
@@ -22,7 +21,11 @@ export type Post = {
     fileExt: string;
     liked: boolean;
     disliked: boolean;
+    sites: SiteIds;
 };
+
+// each site's id for the post, when that site has it
+export type SiteIds = { gelbooru: number | null; danbooru: number | null };
 
 export type PostDetail = Post & { tagGroups: TagGroup[]; blockedBy: string[] };
 export type PostState = { id: number; liked: boolean; disliked: boolean };
@@ -84,7 +87,6 @@ export type ErrorKind =
     | 'http'
     | 'status'
     | 'rejected'
-    | 'needsGelbooru'
     | 'needsGelbooruLogin'
     | 'gelbooruFavouriteRefused'
     | 'loginWindow'
@@ -136,7 +138,7 @@ export const api = {
     postDetail: (id: number) => invoke<PostDetail>('post_detail', { id }),
     openPost: (id: number) => invoke<PostDetail>('open_post', { id }),
     postFamily: (id: number, chips: string[]) => invoke<PostFamily>('post_family', { id, chips }),
-    fileSize: (id: number, _site: Site = settings.site) => invoke<number | null>('file_size', { id }),
+    fileSize: (id: number) => invoke<number | null>('file_size', { id }),
     toggleLike: (id: number, chips: string[]) => invoke<PostState>('toggle_like', { id, chips }),
     toggleDislike: (id: number) => invoke<PostState>('toggle_dislike', { id }),
     likedPosts: (chips: string[], page: number) => invoke<Listing>('liked_posts', { chips, page }),
@@ -174,8 +176,7 @@ export const api = {
     signUp: (username: string, password: string) => invoke<string>('sign_up', { username, password }),
     logIn: (username: string, password: string) => invoke<string>('log_in', { username, password }),
     logOut: () => invoke<void>('log_out'),
-    importFavourites: (user: string) => invoke<void>('import_favourites', { user }),
-    setSite: (site: Site) => invoke<void>('set_site', { site }),
+    importFavourites: (site: Site, user: string) => invoke<void>('import_favourites', { site, user }),
     importFromFile: (name: string, contents: string) => invoke<void>('import_from_file', { name, contents }),
     storageUsage: () => invoke<StorageUsage>('storage_usage'),
     timings: () => invoke<TimingSpan[]>('timings'),
@@ -183,24 +184,23 @@ export const api = {
     exportData: () => invoke<SavedFile>('export_data'),
     importData: () => invoke<boolean>('import_data'),
     resetDatabase: () => invoke<void>('reset_database'),
-    resetAllDatabases: () => invoke<void>('reset_all_databases'),
     clearCache: () => invoke<void>('clear_cache'),
     setCacheLimit: (megabytes: number) => invoke<void>('set_cache_limit', { megabytes }),
-    saveSample: (id: number, _site: Site = settings.site) => invoke<SavedFile>('save_sample', { id }),
-    saveOriginal: (id: number, _site: Site = settings.site) => invoke<SavedFile>('save_original', { id }),
+    saveSample: (id: number) => invoke<SavedFile>('save_sample', { id }),
+    saveOriginal: (id: number) => invoke<SavedFile>('save_original', { id }),
     saveOriginalAs: (id: number) => invoke<SavedFile | null>('save_original_as', { id }),
     pickSaveFolder: () => invoke<SaveFolder | null>('pick_save_folder'),
     defaultSaveFolder: () => invoke<string>('default_save_folder'),
-    copyImage: (id: number, _site: Site = settings.site) => invoke<void>('copy_image', { id }),
+    copyImage: (id: number) => invoke<void>('copy_image', { id }),
 };
 
 const imageBase = convertFileSrc('', 'img');
 
-export function imageUrl(kind: 'thumbnail' | 'sample' | 'original', id: number, _site: Site = settings.site) {
+export function imageUrl(kind: 'thumbnail' | 'sample' | 'original', id: number) {
     return `${imageBase}${kind}/${id}`;
 }
 
-export const showsOriginal = (img: EventTarget, id: number, _site: Site = settings.site) =>
+export const showsOriginal = (img: EventTarget, id: number) =>
     img instanceof HTMLImageElement && img.currentSrc.split('?')[0] === imageUrl('original', id);
 
 let videoBase: string | null = null;
@@ -209,5 +209,5 @@ export async function loadVideoBase() {
     videoBase = await invoke<string | null>('video_base');
 }
 
-export const videoUrl = (id: number, _site: Site = settings.site) =>
+export const videoUrl = (id: number) =>
     videoBase ? `${videoBase}original/${id}` : imageUrl('original', id);

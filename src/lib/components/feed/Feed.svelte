@@ -38,8 +38,7 @@
   let {
     chips,
     initialPost = null,
-    initialSite = null,
-  }: { chips: string[]; initialPost?: number | null; initialSite?: string | null } = $props();
+  }: { chips: string[]; initialPost?: number | null } = $props();
 
   const CURRENT_AT = 0.6;
   const SETTLED_AT = 0.95;
@@ -107,7 +106,7 @@
 
   function updateLink() {
     const post = posts[current];
-    if (post) replaceState(hrefWith(page.url, { site: settings.site, post: post.id }), page.state);
+    if (post) replaceState(hrefWith(page.url, { post: post.id }), page.state);
   }
 
   async function startAt(id: number) {
@@ -209,7 +208,7 @@
     await closeLayer('feedInfo');
     signal(id, 'opened');
     // the related post gets its own history entry, so back returns to the post it was opened from
-    const remember = () => pushState(hrefWith(page.url, { site: settings.site, post: id }), page.state);
+    const remember = () => pushState(hrefWith(page.url, { post: id }), page.state);
     const existing = posts.findIndex((post) => post.id === id);
     if (existing !== -1) {
       remember();
@@ -289,7 +288,7 @@
   });
 
   onMount(() => {
-    if (initialPost !== null && (initialSite === null || initialSite === settings.site)) {
+    if (initialPost !== null) {
       void startAt(initialPost);
     } else if (saved) {
       tick().then(() => {

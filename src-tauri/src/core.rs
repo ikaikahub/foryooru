@@ -1,31 +1,29 @@
 use crate::activity;
-use crate::booru::{self, Booru, Site};
+use crate::booru::{Booru, Site, SiteQuery};
 use crate::catalogue;
 use crate::corpus::CorpusCache;
 use crate::db::{self, Db};
 use crate::error::Result;
 use crate::images::Images;
 use crate::import::{self, ImportStatus};
+use crate::merge;
 use crate::progress::Progress;
 use crate::queue::{self, FetchQueue};
 use crate::sync::{self, SyncStatus};
+use std::collections::HashMap;
 use std::ops::Deref;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 use tauri::ipc::{CommandArg, CommandItem, InvokeError};
 use tauri::{AppHandle, Manager, Runtime};
-use tauri_plugin_store::StoreExt;
 use tokio::sync::Notify;
-
-const LEGACY_DATABASE: &str = "foryooru.db";
 
 pub struct Core {
     pub app: AppHandle,
-    pub site: Site,
     pub http: reqwest::Client,
     pub db: Arc<Db>,
-    pub booru: Booru,
+    pub gelbooru: Booru,
+    pub danbooru: Booru,
     pub images: Arc<Images>,
     pub corpus: Arc<CorpusCache>,
     pub import: Progress<ImportStatus>,
@@ -34,6 +32,8 @@ pub struct Core {
     pub sync: Progress<SyncStatus>,
     pub sync_lock: tokio::sync::Mutex<()>,
     pub sync_queued: AtomicBool,
+    // the site each search's first page came from, so its later pages come from the same one
+    routes: Mutex<HashMap<String, Site>>,
 }
 
 impl Drop for Core {
@@ -43,24 +43,29 @@ impl Drop for Core {
 }
 
 impl Core {
-    fn open(
-        app: &AppHandle,
-        site: Site,
-        http: &reqwest::Client,
-        images: &Arc<Images>,
-    ) -> Result<Arc<Core>> {
-        let db = Arc::new(Db::open(
-            &app.path().app_data_dir()?.join(site.database_file()),
-        )?);
+    pub fn start(app: &AppHandle) -> Result<Arc<Core>> {
+        let data_dir = app.path().app_data_dir()?;
+        std::fs::create_dir_all(&data_dir)?;
+        crate::rate_log::start(&data_dir);
+        let db = Arc::new(merge::open(&data_dir)?);
         db::checkpoint_in_background(&db);
         activity::prune(&db.conn())?;
+        let http = reqwest::Client::builder()
+            .user_agent("foryooru/0.1")
+            .build()?;
+        let images = Arc::new(Images::new(
+            app.clone(),
+            app.path().app_cache_dir()?.join("images"),
+            http.clone(),
+        ));
+        images.prune_in_background();
         let core = Arc::new(Core {
             app: app.clone(),
-            site,
-            http: http.clone(),
-            booru: Booru::new(site, app.clone(), db.clone(), http.clone()),
+            gelbooru: Booru::new(Site::Gelbooru, app.clone(), db.clone(), http.clone()),
+            danbooru: Booru::new(Site::Danbooru, app.clone(), db.clone(), http.clone()),
+            http,
             db,
-            images: images.clone(),
+            images,
             corpus: Arc::new(CorpusCache::default()),
             import: Progress::new(import::EVENT),
             popular_seeding: AtomicBool::new(false),
@@ -68,6 +73,7 @@ impl Core {
             sync: Progress::new(sync::EVENT),
             sync_lock: tokio::sync::Mutex::new(()),
             sync_queued: AtomicBool::new(false),
+            routes: Mutex::new(HashMap::new()),
         });
         queue::start(&core);
         sync::sync_now(&core);
@@ -79,6 +85,72 @@ impl Core {
             }
         });
         Ok(core)
+    }
+
+    pub fn booru(&self, site: Site) -> &Booru {
+        match site {
+            Site::Gelbooru => &self.gelbooru,
+            Site::Danbooru => &self.danbooru,
+        }
+    }
+
+    // Gelbooru's API refuses requests without a key. Danbooru answers anyone
+    pub fn can_search(&self, site: Site) -> bool {
+        match (site, &self.gelbooru) {
+            (Site::Danbooru, _) => true,
+            (Site::Gelbooru, Booru::Gelbooru(gelbooru)) => gelbooru.has_api_key(),
+            (Site::Gelbooru, Booru::Danbooru(_)) => false,
+        }
+    }
+
+    // the site a search goes to, and the search written in that site's terms. later pages stay on the first page's
+    // site, as the sites' orders differ and mixing them would repeat and skip posts
+    pub async fn route(&self, query: &SiteQuery<'_>, page: i64) -> Result<(Site, String)> {
+        let key = format!("{:?} {:?} {:?}", query.tags, query.ratings, query.order);
+        let remembered = self
+            .routes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .copied();
+        let site = match remembered.filter(|site| page > 0 && self.can_search(*site)) {
+            Some(site) => site,
+            None => {
+                let site = self.choose_site(query).await?;
+                self.routes
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(key, site);
+                site
+            }
+        };
+        Ok((site, self.booru(site).render(query).await?))
+    }
+
+    async fn choose_site(&self, query: &SiteQuery<'_>) -> Result<Site> {
+        if !self.can_search(Site::Gelbooru) {
+            return Ok(Site::Danbooru);
+        }
+        if !self.danbooru.takes_whole(query).await? {
+            return Ok(Site::Gelbooru);
+        }
+        // both can answer it whole, so whichever waits less on its rate limit. Danbooru's tags are better on a tie
+        Ok(if self.gelbooru.wait_estimate() < self.danbooru.wait_estimate() {
+            Site::Gelbooru
+        } else {
+            Site::Danbooru
+        })
+    }
+
+    // the sites to favourite a post on: every one the user is logged in to
+    pub fn logged_in_sites(&self) -> Vec<Site> {
+        Site::ALL
+            .into_iter()
+            .filter(|site| match self.booru(*site) {
+                Booru::Gelbooru(gelbooru) => gelbooru.logged_in(),
+                Booru::Danbooru(danbooru) => danbooru.logged_in(),
+            })
+            .collect()
     }
 }
 
@@ -104,84 +176,6 @@ impl Startup {
     }
 }
 
-pub struct Sites {
-    current: RwLock<Arc<Core>>,
-    http: reqwest::Client,
-    images: Arc<Images>,
-}
-
-impl Sites {
-    pub fn start(app: &AppHandle) -> Result<Sites> {
-        let data_dir = app.path().app_data_dir()?;
-        std::fs::create_dir_all(&data_dir)?;
-        crate::rate_log::start(&data_dir);
-        adopt_legacy_database(&data_dir)?;
-        let http = reqwest::Client::builder()
-            .user_agent("foryooru/0.1")
-            .build()?;
-        let images = Arc::new(Images::new(
-            app.clone(),
-            app.path().app_cache_dir()?.join("images"),
-            http.clone(),
-        ));
-        images.prune_in_background();
-        let site = saved_site(app)?;
-        let core = Core::open(app, site, &http, &images)?;
-        Ok(Sites {
-            current: RwLock::new(core),
-            http,
-            images,
-        })
-    }
-
-    pub fn current(&self) -> Arc<Core> {
-        self.current
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
-    }
-
-    pub fn switch(&self, app: &AppHandle, site: Site) -> Result<()> {
-        if self.current().site != site {
-            let core = Core::open(app, site, &self.http, &self.images)?;
-            *self
-                .current
-                .write()
-                .unwrap_or_else(|poisoned| poisoned.into_inner()) = core;
-        }
-        let store = app.store(booru::SETTINGS_STORE)?;
-        store.set("site", serde_json::to_value(site)?);
-        store.save()?;
-        Ok(())
-    }
-}
-
-fn saved_site(app: &AppHandle) -> Result<Site> {
-    let saved = app.store(booru::SETTINGS_STORE)?.get("site");
-    Ok(saved
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or(Site::Danbooru))
-}
-
-fn adopt_legacy_database(data_dir: &Path) -> Result<()> {
-    let (legacy, target) = (
-        data_dir.join(LEGACY_DATABASE),
-        data_dir.join(Site::Gelbooru.database_file()),
-    );
-    if !legacy.exists() || target.exists() {
-        return Ok(());
-    }
-    for (from, to) in db::database_files(&legacy)
-        .into_iter()
-        .zip(db::database_files(&target))
-    {
-        if from.exists() {
-            std::fs::rename(from, to)?;
-        }
-    }
-    Ok(())
-}
-
 pub struct CurrentCore(Arc<Core>);
 
 impl CurrentCore {
@@ -200,11 +194,11 @@ impl Deref for CurrentCore {
 
 impl<'de, R: Runtime> CommandArg<'de, R> for CurrentCore {
     fn from_command(command: CommandItem<'de, R>) -> std::result::Result<Self, InvokeError> {
-        let sites = command
+        let core = command
             .message
             .webview_ref()
-            .try_state::<Sites>()
+            .try_state::<Arc<Core>>()
             .ok_or_else(|| InvokeError::from("The app is still starting"))?;
-        Ok(CurrentCore(sites.current()))
+        Ok(CurrentCore(core.inner().clone()))
     }
 }

@@ -1,3 +1,4 @@
+use crate::booru::Site;
 use crate::catalogue;
 use crate::core::Core;
 use crate::error::Result;
@@ -16,6 +17,7 @@ pub enum Priority {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Job {
     Page {
+        site: Site,
         query: String,
         page: i64,
         max_age: i64,
@@ -135,12 +137,13 @@ async fn run(core: &Arc<Core>, job: &Job) -> Result<()> {
     let _measured = crate::timing::measure("job", note);
     match job {
         Job::Page {
+            site,
             query,
             page,
             max_age,
             lead,
         } => {
-            let stored = catalogue::fetch_page(core, query, *page, *max_age).await?;
+            let stored = catalogue::fetch_page(core, *site, query, *page, *max_age).await?;
             if let (Some(tag), Some(stored)) = (lead, stored) {
                 payoff::credit(&core.db.conn(), tag, &stored.ids)?;
             }

@@ -1,14 +1,13 @@
 import { base } from '$app/paths';
 import { MAGIC_WAND } from '$lib/emoji';
 import { appPath, isCurrentPage } from '$lib/navigation';
-import { currentSite } from '$lib/sites';
 import { requestRerun } from '$lib/state/rerun.svelte';
 import { rememberedSearch, searchHref, sharesSearch, staged } from '$lib/state/search.svelte';
 
 export type Tab = { path: string; label: string; title: () => string; searches: boolean } & ({ emoji: string } | { image: string });
 
 export const TABS: Tab[] = [
-    { path: '/', emoji: '🔍', label: 'Browse', title: () => `Search ${currentSite().label}`, searches: true },
+    { path: '/', emoji: '🔍', label: 'Browse', title: () => 'Search', searches: true },
     { path: '/for-you', image: MAGIC_WAND, label: 'For you', title: () => 'Recommendations', searches: true },
     { path: '/tiktok', emoji: '📱', label: 'TikTok', title: () => 'TikTok mode', searches: true },
     { path: '/artists', emoji: '🎨', label: 'Artists', title: () => 'Artists', searches: true },

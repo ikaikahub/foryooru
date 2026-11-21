@@ -1,6 +1,5 @@
-use crate::booru::Site;
 use crate::core::Core;
-use crate::db::{self, TABLES};
+use crate::db::TABLES;
 use crate::error::Result;
 use serde::Serialize;
 use std::fs;
@@ -87,22 +86,6 @@ pub fn reset_database(core: &Core) -> Result<()> {
         conn.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
     }
     core.corpus.clear();
-    Ok(())
-}
-
-pub fn reset_all_databases(core: &Core) -> Result<()> {
-    reset_database(core)?;
-    let data_dir = core.app.path().app_data_dir()?;
-    for site in Site::ALL.into_iter().filter(|site| *site != core.site) {
-        for file in db::database_files(&data_dir.join(site.database_file())) {
-            match fs::remove_file(file) {
-                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                    return Err(error.into());
-                }
-                _ => {}
-            }
-        }
-    }
     Ok(())
 }
 

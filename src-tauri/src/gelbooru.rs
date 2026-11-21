@@ -118,7 +118,7 @@ struct RawTag {
 
 pub struct Gelbooru {
     app: AppHandle,
-    requester: Requester,
+    pub(crate) requester: Requester,
     latest: Mutex<Option<i64>>,
 }
 
@@ -207,6 +207,21 @@ impl Gelbooru {
                 .await
                 .map(drop)
         }
+    }
+
+    // the API refuses requests without a key, so searches only go to Gelbooru once one is set
+    pub fn has_api_key(&self) -> bool {
+        let filled = |key| booru::setting(&self.app, key).is_ok_and(|value| !value.is_empty());
+        filled("apiKey") && filled("userId")
+    }
+
+    pub fn logged_in(&self) -> bool {
+        self.app
+            .store(booru::SETTINGS_STORE)
+            .ok()
+            .and_then(|store| store.get(SESSION_SETTING))
+            .and_then(|value| serde_json::from_value::<GelbooruSession>(value).ok())
+            .is_some()
     }
 
     async fn call(&self, params: &[(&str, String)], logged: Logged<'_>) -> Result<Value> {

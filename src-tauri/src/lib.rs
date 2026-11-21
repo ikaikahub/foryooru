@@ -24,6 +24,7 @@ mod library;
 mod limiter;
 mod rate_log;
 mod media;
+mod merge;
 mod payoff;
 mod platform;
 mod progress;
@@ -36,7 +37,8 @@ mod timing;
 #[cfg(target_os = "linux")]
 mod video_server;
 
-use crate::core::{Sites, Startup};
+use crate::core::{Core, Startup};
+use std::sync::Arc;
 use tauri::Manager;
 use tauri::http::{Response, StatusCode};
 
@@ -64,8 +66,8 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("img", |context, request, responder| {
             let Some(core) = context
                 .app_handle()
-                .try_state::<Sites>()
-                .map(|sites| sites.current())
+                .try_state::<Arc<Core>>()
+                .map(|core| core.inner().clone())
             else {
                 let busy = Response::builder()
                     .status(StatusCode::SERVICE_UNAVAILABLE)
@@ -79,7 +81,7 @@ pub fn run() {
             });
         })
         .setup(|app| {
-            app.manage(Sites::start(app.handle())?);
+            app.manage(Core::start(app.handle())?);
             #[cfg(target_os = "linux")]
             let video_base = Some(video_server::start(app.handle().clone())?);
             #[cfg(not(target_os = "linux"))]
@@ -137,7 +139,6 @@ pub fn run() {
             commands::timings,
             commands::set_timings,
             commands::reset_database,
-            commands::reset_all_databases,
             commands::clear_cache,
             commands::export_data,
             commands::import_data,
@@ -148,7 +149,6 @@ pub fn run() {
             commands::save_original_as,
             #[cfg(any(desktop, target_os = "android"))]
             commands::copy_image,
-            commands::set_site,
             commands::video_base,
             commands::pick_save_folder,
             commands::default_save_folder,

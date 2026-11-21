@@ -2,7 +2,6 @@ import { api, errorMessage, type Post, type PostState, type SavedSearch, type Ta
 import { page } from '$app/state';
 import { SvelteMap } from 'svelte/reactivity';
 import { splitQuery, urlQuery } from './search.svelte';
-import { currentSite } from '$lib/sites';
 import { settings } from './settings.svelte';
 import { toast } from './toast.svelte';
 
@@ -76,11 +75,11 @@ class Library {
             const state = await api.toggleLike(id, splitQuery(urlQuery(page.url)));
             if (this.versions.get(id) !== version) return;
             this.reactions.set(id, state);
-            // likes also become site favourites whenever the login for that is filled in
-            const canSync = settings.site === 'gelbooru' ? !!settings.gelbooruSession : !!(settings.danbooruLogin && settings.danbooruApiKey);
+            // likes also become favourites on every site whose login is filled in
+            const canSync = !!settings.gelbooruSession || !!(settings.danbooruLogin && settings.danbooruApiKey);
             if (canSync) {
                 api.setSiteFavourite(id, state.liked).catch((error) =>
-                    toast.show(`Couldn't update your ${currentSite().label} favourites: ${errorMessage(error)}`),
+                    toast.show(`Couldn't update your site favourites: ${errorMessage(error)}`),
                 );
             }
         } catch (error) {

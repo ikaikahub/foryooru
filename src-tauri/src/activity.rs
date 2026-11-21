@@ -1,3 +1,4 @@
+use crate::booru::Site;
 use crate::db::{now_ms, page_count};
 use crate::error::{Error, Result};
 pub use foryooru_core::activity::*;
@@ -65,6 +66,7 @@ pub fn record_search(conn: &Connection, query: &str) -> Result<()> {
 
 pub fn record_query(
     conn: &Connection,
+    site: Site,
     endpoint: &str,
     query: &str,
     page: Option<i64>,
@@ -80,8 +82,9 @@ pub fn record_query(
         Some(error) => (None, Some(error.to_string())),
     };
     conn.execute(
-        "INSERT INTO activity (at, kind, endpoint, query, page, status, error, ms) VALUES (?1, 'query', ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![now_ms(), endpoint, query, page, status, error, ms],
+        "INSERT INTO activity (at, kind, site, endpoint, query, page, status, error, ms)
+         VALUES (?1, 'query', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![now_ms(), site.key(), endpoint, query, page, status, error, ms],
     )?;
     Ok(())
 }

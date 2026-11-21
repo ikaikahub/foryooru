@@ -1,7 +1,8 @@
 // keeps likes, dislikes, favourite tags, the blacklist and saved searches in step with the account on the sync worker.
 // sync_snapshot holds what the account looked like after the last sync, so comparing it with the live tables
-// shows what changed here without touching every place that edits them
-use crate::booru::{Lineage, RawPost};
+// shows what changed here without touching every place that edits them. local post ids differ between devices, so
+// likes and dislikes go by the file's md5, or by a site's id for the few posts without one
+use crate::booru::{Lineage, RawPost, Site};
 use crate::catalogue;
 use crate::core::Core;
 use crate::db::now_ms;
@@ -34,13 +35,17 @@ const USER_META: &str = "sync_user";
 const CURSOR_META: &str = "sync_cursor";
 const SYNCED_AT_META: &str = "sync_at";
 
-const CURRENT_ITEMS: &str = "WITH current (list, key, sort_at, changed_at) AS (
-    SELECT 'like', CAST(post_id AS TEXT), sort_at, COALESCE(liked_at, sort_at) FROM likes
-    UNION ALL SELECT 'dislike', CAST(post_id AS TEXT), disliked_at, disliked_at FROM dislikes
-    UNION ALL SELECT 'favouriteTag', name, created_at, created_at FROM favourite_tags
-    UNION ALL SELECT 'blacklist', name, created_at, created_at FROM blacklist
-    UNION ALL SELECT 'savedSearch', query, created_at, created_at FROM saved_searches
-    UNION ALL SELECT 'followedArtist', name, created_at, created_at FROM followed_artists
+const CURRENT_ITEMS: &str = "WITH keyed (post_id, key) AS (
+    SELECT p.id, COALESCE(p.md5, (SELECT sp.site || ':' || sp.site_id FROM site_posts sp WHERE sp.post_id = p.id
+                                  ORDER BY sp.site LIMIT 1))
+    FROM posts p WHERE p.id IN (SELECT post_id FROM likes UNION SELECT post_id FROM dislikes)
+), current (list, key, sort_at, changed_at, post_id) AS (
+    SELECT 'like', k.key, sort_at, COALESCE(liked_at, sort_at), l.post_id FROM likes l JOIN keyed k ON k.post_id = l.post_id
+    UNION ALL SELECT 'dislike', k.key, disliked_at, disliked_at, d.post_id FROM dislikes d JOIN keyed k ON k.post_id = d.post_id
+    UNION ALL SELECT 'favouriteTag', name, created_at, created_at, NULL FROM favourite_tags
+    UNION ALL SELECT 'blacklist', name, created_at, created_at, NULL FROM blacklist
+    UNION ALL SELECT 'savedSearch', query, created_at, created_at, NULL FROM saved_searches
+    UNION ALL SELECT 'followedArtist', name, created_at, created_at, NULL FROM followed_artists
 )";
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -73,13 +78,26 @@ struct Item {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SyncedPost {
+    md5: Option<String>,
+    width: i64,
+    height: i64,
+    sites: SyncedSites,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct SyncedSites {
+    gelbooru: Option<SyncedSitePost>,
+    danbooru: Option<SyncedSitePost>,
+}
+
+// what one site says about the post
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncedSitePost {
     id: i64,
-    md5: String,
     rating: String,
     score: i64,
     tags: Vec<String>,
-    width: i64,
-    height: i64,
     preview_url: String,
     preview_width: i64,
     preview_height: i64,
@@ -91,26 +109,36 @@ struct SyncedPost {
 }
 
 impl SyncedPost {
-    fn into_raw(self) -> Option<RawPost> {
-        Some(RawPost {
-            id: self.id,
-            md5: self.md5,
-            rating: Rating::parse(&self.rating)?,
-            score: self.score,
-            tags: self.tags,
-            width: self.width,
-            height: self.height,
-            preview_url: self.preview_url,
-            preview_width: self.preview_width,
-            preview_height: self.preview_height,
-            sample_url: self.sample_url,
-            file_url: self.file_url,
-            posted_at: self.posted_at,
-            lineage: self.has_children.map(|has_children| Lineage {
-                parent: self.parent_id,
-                has_children,
-            }),
-        })
+    fn into_raws(self) -> Vec<(Site, RawPost)> {
+        let SyncedSites { gelbooru, danbooru } = self.sites;
+        [(Site::Gelbooru, gelbooru), (Site::Danbooru, danbooru)]
+            .into_iter()
+            .filter_map(|(site, post)| {
+                let post = post?;
+                Some((
+                    site,
+                    RawPost {
+                        id: post.id,
+                        md5: self.md5.clone().unwrap_or_default(),
+                        rating: Rating::parse(&post.rating)?,
+                        score: post.score,
+                        tags: post.tags,
+                        width: self.width,
+                        height: self.height,
+                        preview_url: post.preview_url,
+                        preview_width: post.preview_width,
+                        preview_height: post.preview_height,
+                        sample_url: post.sample_url,
+                        file_url: post.file_url,
+                        posted_at: post.posted_at,
+                        lineage: post.has_children.map(|has_children| Lineage {
+                            parent: post.parent_id,
+                            has_children,
+                        }),
+                    },
+                ))
+            })
+            .collect()
     }
 }
 
@@ -269,16 +297,15 @@ async fn run(core: &Arc<Core>) {
 }
 
 async fn sync(core: &Arc<Core>, account: &Account) -> Result<usize> {
-    let site = serde_json::to_value(core.site)?;
     let token = Some(account.token.as_str());
     let (changes, mut cursor) = local_changes(&core.db.conn(), &account.username)?;
     for batch in changes.chunks(PUSH_BATCH) {
-        call::<Value>(core, "/push", token, json!({ "site": site, "items": batch })).await?;
+        call::<Value>(core, "/push", token, json!({ "items": batch })).await?;
         mark_pushed(&core.db.conn(), batch)?;
     }
     let mut pulled = 0;
     for _ in 0..MAX_PULL_PAGES {
-        let page: PullPage = call(core, "/pull", token, json!({ "site": site, "since": cursor })).await?;
+        let page: PullPage = call(core, "/pull", token, json!({ "since": cursor })).await?;
         if page.more && page.cursor <= cursor {
             return Err(Error::Account("The sync server sent the same page twice".to_owned()));
         }
@@ -322,16 +349,22 @@ fn local_changes(conn: &Connection, username: &str) -> Result<(Vec<Item>, i64)> 
     let mut changes = Vec::new();
     {
         let mut added = conn.prepare(&format!(
-            "{CURRENT_ITEMS} SELECT list, key, sort_at, changed_at FROM current c
+            "{CURRENT_ITEMS} SELECT list, key, sort_at, changed_at, post_id FROM current c
              WHERE NOT EXISTS (SELECT 1 FROM sync_snapshot s WHERE s.list = c.list AND s.key = c.key)"
         ))?;
         for row in added.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get(2)?, row.get(3)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get::<_, Option<i64>>(4)?,
+            ))
         })? {
-            let (list, key, sort_at, changed_at) = row?;
-            let post = match list.as_str() {
-                "like" | "dislike" => synced_post(conn, key.parse().unwrap_or_default())?,
-                _ => None,
+            let (list, key, sort_at, changed_at, post_id) = row?;
+            let post = match post_id {
+                Some(id) => synced_post(conn, id)?,
+                None => None,
             };
             changes.push(Item { list, key, present: true, sort_at, changed_at, post });
         }
@@ -356,36 +389,65 @@ fn local_changes(conn: &Connection, username: &str) -> Result<(Vec<Item>, i64)> 
 }
 
 fn synced_post(conn: &Connection, id: i64) -> Result<Option<SyncedPost>> {
-    Ok(conn
-        .query_row(
-            "SELECT id, md5, rating, score, width, height, preview_url, preview_width, preview_height, sample_url,
-                    file_url, posted_at, parent_id, has_children,
-                    (SELECT group_concat(t.name, ' ') FROM post_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.post_id = p.id)
-             FROM posts p WHERE id = ?1",
-            [id],
-            |row| {
-                Ok(SyncedPost {
-                    id: row.get(0)?,
-                    md5: row.get(1)?,
-                    rating: row.get(2)?,
-                    score: row.get(3)?,
-                    width: row.get(4)?,
-                    height: row.get(5)?,
-                    preview_url: row.get(6)?,
-                    preview_width: row.get(7)?,
-                    preview_height: row.get(8)?,
-                    sample_url: row.get(9)?,
-                    file_url: row.get(10)?,
-                    posted_at: row.get(11)?,
-                    parent_id: row.get(12)?,
-                    has_children: row.get(13)?,
-                    tags: row
-                        .get::<_, Option<String>>(14)?
-                        .map(|names| names.split(' ').map(str::to_owned).collect())
-                        .unwrap_or_default(),
-                })
+    let Some((md5, width, height)) = conn
+        .query_row("SELECT md5, width, height FROM posts WHERE id = ?1", [id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    let mut sites = SyncedSites::default();
+    let mut statement = conn.prepare_cached(
+        "SELECT site, site_id, rating, score, preview_url, preview_width, preview_height, sample_url, file_url,
+                posted_at, parent_id, has_children,
+                (SELECT group_concat(t.name, ' ') FROM post_tags pt JOIN tags t ON t.id = pt.tag_id
+                 WHERE pt.post_id = sp.post_id AND pt.site = sp.site)
+         FROM site_posts sp WHERE post_id = ?1",
+    )?;
+    let rows = statement.query_map([id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            SyncedSitePost {
+                id: row.get(1)?,
+                rating: row.get(2)?,
+                score: row.get(3)?,
+                preview_url: row.get(4)?,
+                preview_width: row.get(5)?,
+                preview_height: row.get(6)?,
+                sample_url: row.get(7)?,
+                file_url: row.get(8)?,
+                posted_at: row.get(9)?,
+                parent_id: row.get(10)?,
+                has_children: row.get(11)?,
+                tags: row
+                    .get::<_, Option<String>>(12)?
+                    .map(|names| names.split(' ').map(str::to_owned).collect())
+                    .unwrap_or_default(),
             },
-        )
+        ))
+    })?;
+    for row in rows {
+        let (site, post) = row?;
+        match Site::from_key(&site) {
+            Some(Site::Gelbooru) => sites.gelbooru = Some(post),
+            Some(Site::Danbooru) => sites.danbooru = Some(post),
+            None => {}
+        }
+    }
+    Ok(Some(SyncedPost { md5, width, height, sites }))
+}
+
+// the local post an item's key names
+fn post_for_key(conn: &Connection, key: &str) -> Result<Option<i64>> {
+    if let Some((site, site_id)) = key.split_once(':') {
+        let (Some(site), Ok(site_id)) = (Site::from_key(site), site_id.parse()) else {
+            return Ok(None);
+        };
+        return catalogue::post_with_site_id(conn, site, site_id);
+    }
+    Ok(conn
+        .query_row("SELECT id FROM posts WHERE md5 = ?1", [key], |row| row.get(0))
         .optional()?)
 }
 
@@ -426,28 +488,36 @@ fn table_of(list: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn apply(core: &Arc<Core>, mut items: Vec<Item>) -> Result<usize> {
-    // posts liked on another device are stored first, likes can only point at posts that exist here
-    let new_posts: Vec<RawPost> = {
-        let conn = core.db.conn();
-        let mut known = conn.prepare_cached("SELECT EXISTS (SELECT 1 FROM posts WHERE id = ?1)")?;
-        let mut new_posts = Vec::new();
-        for item in items.iter_mut().filter(|item| item.present) {
-            if let Some(post) = item.post.take()
-                && !known.query_row([post.id], |row| row.get::<_, bool>(0))?
-                && let Some(raw) = post.into_raw()
-            {
-                new_posts.push(raw);
-            }
-        }
-        new_posts
-    };
-    if !new_posts.is_empty() {
-        let mut conn = core.db.conn();
-        let stored = catalogue::store_posts(&mut conn, &new_posts, false)?;
-        catalogue::after_store(core, &stored);
+fn apply(core: &Arc<Core>, items: Vec<Item>) -> Result<usize> {
+    let mut conn = core.db.conn();
+    let (changed, stored) = apply_with_posts(&mut conn, items)?;
+    drop(conn);
+    for stored in &stored {
+        catalogue::after_store(core, stored);
     }
-    apply_items(&core.db.conn(), &items)
+    Ok(changed)
+}
+
+// posts liked on another device are stored first, likes can only point at posts that exist here
+fn apply_with_posts(conn: &mut Connection, mut items: Vec<Item>) -> Result<(usize, Vec<catalogue::Stored>)> {
+    let mut new_posts: Vec<(Site, RawPost)> = Vec::new();
+    for item in items.iter_mut().filter(|item| item.present) {
+        if let Some(post) = item.post.take()
+            && post_for_key(conn, &item.key)?.is_none()
+        {
+            new_posts.extend(post.into_raws());
+        }
+    }
+    let (gelbooru, danbooru): (Vec<_>, Vec<_>) =
+        new_posts.into_iter().partition(|(site, _)| *site == Site::Gelbooru);
+    let mut stored = Vec::new();
+    for (site, raws) in [(Site::Gelbooru, gelbooru), (Site::Danbooru, danbooru)] {
+        let raws: Vec<RawPost> = raws.into_iter().map(|(_, raw)| raw).collect();
+        if !raws.is_empty() {
+            stored.push(catalogue::store_posts(conn, site, &raws, false)?);
+        }
+    }
+    Ok((apply_items(conn, &items)?, stored))
 }
 
 fn apply_items(conn: &Connection, items: &[Item]) -> Result<usize> {
@@ -458,9 +528,9 @@ fn apply_items(conn: &Connection, items: &[Item]) -> Result<usize> {
             continue;
         };
         let key = match column {
-            "post_id" => match item.key.parse::<i64>() {
-                Ok(id) => rusqlite::types::Value::Integer(id),
-                Err(_) => continue,
+            "post_id" => match post_for_key(&tx, &item.key)? {
+                Some(id) => rusqlite::types::Value::Integer(id),
+                None => continue,
             },
             _ => rusqlite::types::Value::Text(item.key.clone()),
         };
@@ -519,24 +589,12 @@ mod tests {
         conn
     }
 
-    fn store_post(conn: &mut Connection, id: i64) {
-        let raw = RawPost {
-            id,
-            md5: "0".repeat(32),
-            rating: Rating::General,
-            score: 1,
-            tags: vec!["blue_sky".to_owned(), "cat".to_owned()],
-            width: 10,
-            height: 10,
-            preview_url: "preview".to_owned(),
-            preview_width: 1,
-            preview_height: 1,
-            sample_url: "sample".to_owned(),
-            file_url: "file.png".to_owned(),
-            posted_at: None,
-            lineage: None,
-        };
-        catalogue::store_posts(conn, &[raw], false).unwrap();
+    const MD5: &str = "0123456789abcdef0123456789abcdef";
+
+    // stores a post as one site sent it and returns its local id
+    fn store_post(conn: &mut Connection, site: Site, site_id: i64) -> i64 {
+        let raw = catalogue::tests::raw(site_id, MD5, &["blue_sky", "cat"]);
+        catalogue::store_posts(conn, site, &[raw], false).unwrap().ids[0]
     }
 
     // pushes this device's changes and returns them as the server would hand them to the other device
@@ -547,53 +605,85 @@ mod tests {
     }
 
     // the device side of apply(), without the post index that needs a running app
-    fn receive(conn: &mut Connection, mut items: Vec<Item>) {
+    fn receive(conn: &mut Connection, items: Vec<Item>) {
         local_changes(conn, "jay").unwrap();
-        let posts: Vec<RawPost> = items
-            .iter_mut()
-            .filter_map(|item| item.post.take()?.into_raw())
-            .collect();
-        catalogue::store_posts(conn, &posts, false).unwrap();
-        apply_items(conn, &items).unwrap();
+        apply_with_posts(conn, items).unwrap();
     }
 
     fn liked(conn: &Connection, id: i64) -> bool {
         library::post_state(conn, id).unwrap().liked
     }
 
+    fn local_id(conn: &Connection) -> i64 {
+        post_for_key(conn, MD5).unwrap().unwrap()
+    }
+
     #[test]
     fn a_like_travels_with_its_post_and_comes_back_as_an_unlike() {
         let (mut phone, mut desktop) = (device(), device());
-        store_post(&mut phone, 7);
-        library::toggle_like(&mut phone, 7).unwrap();
+        // the phone's earlier posts give this one another local id than the desktop's
+        store_post(&mut phone, Site::Danbooru, 3);
+        phone.execute("UPDATE posts SET md5 = 'other' WHERE id = 1", []).unwrap();
+        let on_phone = store_post(&mut phone, Site::Danbooru, 7);
+        library::toggle_like(&mut phone, on_phone).unwrap();
 
         let changes = push(&phone);
         assert_eq!(changes.len(), 1);
-        assert_eq!(changes[0].post.as_ref().unwrap().tags, ["blue_sky", "cat"]);
+        assert_eq!(changes[0].key, MD5);
+        let sites = &changes[0].post.as_ref().unwrap().sites;
+        assert_eq!(sites.danbooru.as_ref().unwrap().tags, ["blue_sky", "cat"]);
         assert!(push(&phone).is_empty());
 
         receive(&mut desktop, changes);
-        assert!(liked(&desktop, 7));
+        let on_desktop = local_id(&desktop);
+        assert_ne!(on_phone, on_desktop);
+        assert!(liked(&desktop, on_desktop));
         assert!(push(&desktop).is_empty(), "applied items must not be pushed back");
 
-        library::toggle_like(&mut desktop, 7).unwrap();
+        library::toggle_like(&mut desktop, on_desktop).unwrap();
         let unlike = push(&desktop);
         assert!(!unlike[0].present);
         receive(&mut phone, unlike);
-        assert!(!liked(&phone, 7));
+        assert!(!liked(&phone, on_phone));
         assert!(push(&phone).is_empty());
+    }
+
+    #[test]
+    fn a_like_finds_the_same_file_from_the_other_site() {
+        let (mut phone, mut desktop) = (device(), device());
+        let on_phone = store_post(&mut phone, Site::Gelbooru, 900);
+        let on_desktop = store_post(&mut desktop, Site::Danbooru, 5);
+        library::toggle_like(&mut phone, on_phone).unwrap();
+        receive(&mut desktop, push(&phone));
+        assert!(liked(&desktop, on_desktop));
+        let ids = catalogue::site_ids(&desktop, on_desktop).unwrap();
+        assert_eq!((ids.gelbooru, ids.danbooru), (None, Some(5)));
+    }
+
+    #[test]
+    fn a_post_without_an_md5_goes_by_its_site_id() {
+        let (mut phone, mut desktop) = (device(), device());
+        let raw = catalogue::tests::raw(42, "", &["cat"]);
+        let on_phone = catalogue::store_posts(&mut phone, Site::Danbooru, &[raw], false).unwrap().ids[0];
+        library::toggle_like(&mut phone, on_phone).unwrap();
+        let changes = push(&phone);
+        assert_eq!(changes[0].key, "danbooru:42");
+        receive(&mut desktop, changes);
+        let on_desktop = catalogue::post_with_site_id(&desktop, Site::Danbooru, 42).unwrap().unwrap();
+        assert!(liked(&desktop, on_desktop));
     }
 
     #[test]
     fn a_dislike_from_elsewhere_replaces_the_local_like() {
         let (mut phone, mut desktop) = (device(), device());
-        store_post(&mut phone, 7);
-        library::toggle_like(&mut phone, 7).unwrap();
+        let on_phone = store_post(&mut phone, Site::Danbooru, 7);
+        library::toggle_like(&mut phone, on_phone).unwrap();
         receive(&mut desktop, push(&phone));
 
-        library::toggle_dislike(&mut desktop, 7).unwrap();
+        let on_desktop = local_id(&desktop);
+        library::toggle_dislike(&mut desktop, on_desktop).unwrap();
         receive(&mut phone, push(&desktop));
-        let state = library::post_state(&phone, 7).unwrap();
+        let state = library::post_state(&phone, on_phone).unwrap();
         assert!(state.disliked && !state.liked);
         assert!(push(&phone).is_empty());
     }
@@ -613,14 +703,14 @@ mod tests {
         let mut desktop = device();
         let orphan = Item {
             list: "like".to_owned(),
-            key: "99".to_owned(),
+            key: "fedcba9876543210fedcba9876543210".to_owned(),
             present: true,
             sort_at: 1,
             changed_at: 1,
             post: None,
         };
         receive(&mut desktop, vec![orphan]);
-        assert!(!liked(&desktop, 99));
+        assert_eq!(one_count(&desktop), 0);
         assert!(push(&desktop).is_empty());
     }
 
@@ -633,11 +723,15 @@ mod tests {
         assert_ne!(key, derive_key("kay", "hunter22").unwrap());
     }
 
+    fn one_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM likes", [], |row| row.get(0)).unwrap()
+    }
+
     #[test]
     fn another_account_starts_by_merging_everything() {
         let mut phone = device();
-        store_post(&mut phone, 7);
-        library::toggle_like(&mut phone, 7).unwrap();
+        let id = store_post(&mut phone, Site::Danbooru, 7);
+        library::toggle_like(&mut phone, id).unwrap();
         push(&phone);
         let (changes, cursor) = local_changes(&phone, "someone_else").unwrap();
         assert_eq!((changes.len(), cursor), (1, 0));

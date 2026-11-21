@@ -1,6 +1,7 @@
 use crate::booru::{SETTINGS_STORE, Site};
-use crate::core::Sites;
-use crate::db;
+use crate::core::Core;
+use crate::merge::{self, DATABASE};
+use std::sync::Arc;
 use crate::error::{Error, Result};
 use crate::gallery::{self, SavedFile};
 use rusqlite::{Connection, OpenFlags};
@@ -22,33 +23,16 @@ fn fresh_dir(app: &AppHandle, name: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-fn remove_database(path: &Path) -> Result<()> {
-    for file in db::database_files(path) {
-        match fs::remove_file(file) {
-            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error.into()),
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
 fn archive(app: &AppHandle) -> Result<Vec<u8>> {
     let data_dir = app.path().app_data_dir()?;
     let staging = fresh_dir(app, "exporting")?;
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
-    for site in Site::ALL {
-        let name = site.database_file();
-        let source = data_dir.join(name);
-        if !source.exists() {
-            continue;
-        }
-        let copy = staging.join(name);
-        Connection::open_with_flags(&source, OpenFlags::SQLITE_OPEN_READ_ONLY)?
-            .execute("VACUUM INTO ?1", [copy.to_string_lossy()])?;
-        zip.start_file(name, options)?;
-        io::copy(&mut File::open(&copy)?, &mut zip)?;
-    }
+    let copy = staging.join(DATABASE);
+    Connection::open_with_flags(data_dir.join(DATABASE), OpenFlags::SQLITE_OPEN_READ_ONLY)?
+        .execute("VACUUM INTO ?1", [copy.to_string_lossy()])?;
+    zip.start_file(DATABASE, options)?;
+    io::copy(&mut File::open(&copy)?, &mut zip)?;
     let settings: serde_json::Map<String, serde_json::Value> =
         app.store(SETTINGS_STORE)?.entries().into_iter().collect();
     zip.start_file(SETTINGS_STORE, options)?;
@@ -92,41 +76,43 @@ pub fn import(app: &AppHandle, backup: &Path) -> Result<()> {
             Err(zip::result::ZipError::FileNotFound) => None,
             Err(error) => return Err(error.into()),
         };
-    let databases: Vec<Site> = Site::ALL
+    let merged = archive.index_for_name(DATABASE).is_some();
+    // backups from before the merge hold one file per site, which are merged the same way the app's own were
+    let site_files: Vec<Site> = Site::ALL
         .into_iter()
         .filter(|site| archive.index_for_name(site.database_file()).is_some())
         .collect();
-    if settings.is_none() && databases.is_empty() {
+    if settings.is_none() && !merged && site_files.is_empty() {
         return Err(Error::NotABackup);
     }
 
-    let sites = app.state::<Sites>();
-    let data_dir = app.path().app_data_dir()?;
     let staging = fresh_dir(app, "importing")?;
-    for site in databases {
-        let name = site.database_file();
-        let staged = staging.join(name);
-        io::copy(&mut archive.by_name(name)?, &mut File::create(&staged)?)?;
-        let current = sites.current();
-        if current.site == site {
-            current.db.restore(&staged)?;
-            current.corpus.clear();
-        } else {
-            let target = data_dir.join(name);
-            remove_database(&target)?;
-            fs::copy(&staged, &target)?;
+    let restored = if merged {
+        let staged = staging.join(DATABASE);
+        io::copy(&mut archive.by_name(DATABASE)?, &mut File::create(&staged)?)?;
+        Some(staged)
+    } else if !site_files.is_empty() {
+        let mut staged = Vec::new();
+        for site in site_files {
+            let path = staging.join(site.database_file());
+            io::copy(&mut archive.by_name(site.database_file())?, &mut File::create(&path)?)?;
+            staged.push((site, path));
         }
+        let target = staging.join(DATABASE);
+        merge::merge(&staged, &target)?;
+        Some(target)
+    } else {
+        None
+    };
+    if let Some(restored) = restored {
+        let core = app.state::<Arc<Core>>();
+        core.db.restore(&restored)?;
+        core.corpus.clear();
     }
     fs::remove_dir_all(&staging)?;
 
     if let Some(entries) = settings {
-        let site = entries
-            .get("site")
-            .and_then(|value| serde_json::from_value::<Site>(value.clone()).ok());
         restore_settings(app, entries)?;
-        if let Some(site) = site {
-            sites.switch(app, site)?;
-        }
     }
     Ok(())
 }

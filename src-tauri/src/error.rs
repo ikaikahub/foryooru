@@ -14,8 +14,6 @@ pub enum Error {
         status: u16,
         message: String,
     },
-    #[error("Exports only work with Gelbooru")]
-    NeedsGelbooru,
     #[error("Log in to Gelbooru in Settings, API settings, to sync favourites")]
     NeedsGelbooruLogin,
     #[error("Gelbooru didn't accept the favourite, try logging in again")]
@@ -76,6 +74,8 @@ pub enum Error {
     Account(String),
     #[error("{message}")]
     SyncRejected { status: u16, message: String },
+    #[error("Couldn't merge the Gelbooru and Danbooru databases: {0}")]
+    Merge(String),
 }
 
 impl Error {
@@ -85,7 +85,6 @@ impl Error {
             Error::Http(_) => "http",
             Error::Status(_) => "status",
             Error::Rejected { .. } => "rejected",
-            Error::NeedsGelbooru => "needsGelbooru",
             Error::NeedsGelbooruLogin => "needsGelbooruLogin",
             Error::GelbooruFavouriteRefused => "gelbooruFavouriteRefused",
             #[cfg(desktop)]
@@ -120,6 +119,7 @@ impl Error {
             Error::NotABackup => "notABackup",
             Error::Account(_) => "account",
             Error::SyncRejected { .. } => "syncRejected",
+            Error::Merge(_) => "merge",
         }
     }
 }

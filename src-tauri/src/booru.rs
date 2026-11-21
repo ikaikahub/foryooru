@@ -55,11 +55,8 @@ impl Site {
         }
     }
 
-    pub fn other(self) -> Site {
-        match self {
-            Site::Gelbooru => Site::Danbooru,
-            Site::Danbooru => Site::Gelbooru,
-        }
+    pub fn from_key(key: &str) -> Option<Site> {
+        Site::ALL.into_iter().find(|site| site.key() == key)
     }
 
     // the site whose CDN serves this url
@@ -131,6 +128,10 @@ pub struct Logged<'a> {
 }
 
 impl Requester {
+    pub fn wait_estimate(&self) -> Duration {
+        self.limiter.wait_estimate()
+    }
+
     pub fn new(site: Site, db: Arc<Db>, http: reqwest::Client, limiter: Limiter) -> Requester {
         Requester {
             site,
@@ -188,6 +189,7 @@ impl Requester {
         let ms = started.elapsed().as_millis() as i64;
         if let Err(error) = activity::record_query(
             &self.db.conn(),
+            self.site,
             logged.endpoint,
             logged.query,
             logged.page,
@@ -351,8 +353,25 @@ impl Booru {
         Ok(words.join(" "))
     }
 
+    // how long a request to this site would wait for its rate limit right now
+    pub fn wait_estimate(&self) -> Duration {
+        match self {
+            Booru::Gelbooru(gelbooru) => gelbooru.requester.wait_estimate(),
+            Booru::Danbooru(danbooru) => danbooru.requester.wait_estimate(),
+        }
+    }
+
     pub fn ranks_popular(&self) -> bool {
         matches!(self, Booru::Danbooru(_))
+    }
+
+    // whether the site can run the search as asked, its order included. Danbooru limits how many tags a search has
+    pub async fn takes_whole(&self, query: &SiteQuery<'_>) -> Result<bool> {
+        let words = query.tags.len() + usize::from(query.order.is_some());
+        Ok(match self {
+            Booru::Gelbooru(_) => true,
+            Booru::Danbooru(danbooru) => words <= danbooru.tag_limit().await?,
+        })
     }
 
     pub async fn order_fits(&self, tag_count: usize) -> Result<bool> {

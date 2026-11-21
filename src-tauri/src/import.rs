@@ -55,23 +55,25 @@ fn start(
     Ok(())
 }
 
-pub fn favourites(core: &Arc<Core>, user: String) -> Result<()> {
+pub fn favourites(core: &Arc<Core>, site: Site, user: String) -> Result<()> {
     let task_core = core.clone();
-    let source = format!("{} user {user}", core.site.name());
+    let source = format!("{} user {user}", site.name());
     start(core, source, None, async move {
-        match &task_core.booru {
+        match task_core.booru(site) {
             Booru::Gelbooru(gelbooru) => import_gelbooru(&task_core, gelbooru, &user).await,
             Booru::Danbooru(_) => import_danbooru(&task_core, &user).await,
         }
     })
 }
 
+// pending maps Gelbooru post ids to when they were favourited
 fn save_dated_likes(conn: &Connection, pending: &mut HashMap<i64, i64>) -> Result<usize> {
     let mut saved = Vec::new();
     let tx = conn.unchecked_transaction()?;
     {
         let mut statement = tx.prepare_cached(
-            "INSERT INTO likes (post_id, sort_at, liked_at) SELECT ?1, ?2, ?2 WHERE EXISTS (SELECT 1 FROM posts WHERE id = ?1)
+            "INSERT INTO likes (post_id, sort_at, liked_at)
+             SELECT post_id, ?2, ?2 FROM site_posts WHERE site = 'gelbooru' AND site_id = ?1
              ON CONFLICT (post_id) DO UPDATE SET sort_at = excluded.sort_at, liked_at = excluded.liked_at",
         )?;
         for (id, added) in pending.iter() {
@@ -102,7 +104,7 @@ async fn import_gelbooru(core: &Arc<Core>, gelbooru: &Gelbooru, user_id: &str) -
         let (raws, _) = gelbooru.search(&format!("fav:{user_id}"), page).await?;
         let saved = {
             let mut conn = core.db.conn();
-            let stored = catalogue::store_posts(&mut conn, &raws, false)?;
+            let stored = catalogue::store_posts(&mut conn, Site::Gelbooru, &raws, false)?;
             catalogue::after_store(core, &stored);
             save_dated_likes(&conn, &mut pending)?
         };
@@ -124,21 +126,20 @@ async fn import_danbooru(core: &Arc<Core>, user: &str) -> Result<()> {
     let mut total = None;
     let mut page = 0;
     loop {
-        let (raws, found_total) = core.booru.search(&query, page, total).await?;
+        let (raws, found_total) = core.danbooru.search(&query, page, total).await?;
         total = Some(found_total);
-        let ids: Vec<i64> = raws.iter().map(|raw| raw.id).collect();
         let saved = {
             let mut conn = core.db.conn();
-            let stored = catalogue::store_posts(&mut conn, &raws, false)?;
+            let stored = catalogue::store_posts(&mut conn, Site::Danbooru, &raws, false)?;
             catalogue::after_store(core, &stored);
-            save_undated_likes(&conn, &ids, started - page * PAGE_SIZE)?
+            save_undated_likes(&conn, &stored.ids, started - page * PAGE_SIZE)?
         };
         core.import.update(&core.app, |status| {
             status.total = usize::try_from(found_total).ok();
             status.imported += saved;
         });
         page += 1;
-        if page * PAGE_SIZE >= found_total.min(core.booru.max_offset()) {
+        if page * PAGE_SIZE >= found_total.min(core.danbooru.max_offset()) {
             break;
         }
         crate::platform::sleep(PAGE_PAUSE).await;
@@ -261,9 +262,6 @@ fn parse_file(contents: &str) -> Result<Vec<Value>> {
 }
 
 pub fn from_file(core: &Arc<Core>, name: String, contents: &str) -> Result<()> {
-    if core.site != Site::Gelbooru {
-        return Err(Error::NeedsGelbooru);
-    }
     let entries = parse_file(contents)?;
     let task_core = core.clone();
     start(core, name, Some(entries.len()), async move {
@@ -291,21 +289,24 @@ async fn import_file(core: &Arc<Core>, entries: Vec<Value>) -> Result<()> {
                 })
                 .collect();
             let mut conn = core.db.conn();
-            let stored = catalogue::store_posts(&mut conn, &raws, true)?;
+            let stored = catalogue::store_posts(&mut conn, Site::Gelbooru, &raws, true)?;
             catalogue::after_store(core, &stored);
         }
         for id in unresolved {
             crate::platform::sleep(PAGE_PAUSE).await;
-            if let Ok((raws, _)) = core.booru.search(&format!("id:{id}"), 0, None).await {
-                let stored = catalogue::store_posts(&mut core.db.conn(), &raws, false)?;
+            if let Ok((raws, _)) = core.gelbooru.search(&format!("id:{id}"), 0, None).await {
+                let stored = catalogue::store_posts(&mut core.db.conn(), Site::Gelbooru, &raws, false)?;
                 catalogue::after_store(core, &stored);
             }
         }
-        let saved = save_undated_likes(
-            &core.db.conn(),
-            &ids,
-            started - (chunk_index as i64) * PAGE_SIZE,
-        )?;
+        let saved = {
+            let conn = core.db.conn();
+            let mut local_ids = Vec::with_capacity(ids.len());
+            for id in &ids {
+                local_ids.extend(catalogue::post_with_site_id(&conn, Site::Gelbooru, *id)?);
+            }
+            save_undated_likes(&conn, &local_ids, started - (chunk_index as i64) * PAGE_SIZE)?
+        };
         core.import.update(&core.app, |status| {
             status.imported += saved;
             status.skipped += ids.len() - saved;

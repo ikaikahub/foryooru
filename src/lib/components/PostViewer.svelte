@@ -6,7 +6,6 @@
   import { staged } from '$lib/state/search.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
   import { viewer } from '$lib/state/viewer.svelte';
-  import { settings } from '$lib/state/settings.svelte';
   import { isShortcut } from '$lib/keys';
   import { taps } from '$lib/attachments';
   import { isZoomed, justZoomed, resetZoom } from '$lib/zoom';
@@ -314,7 +313,7 @@
       {#if shown?.blockedBy.length}
         <p class="p-4 text-center opacity-70">It has a blacklisted tag: {shown.blockedBy.join(', ')}.</p>
       {:else if media}
-        <PostMedia post={media} active={slide.delta === 0} controls site={settings.site} />
+        <PostMedia post={media} active={slide.delta === 0} controls />
       {:else if failure !== undefined}
         <ErrorNote error={failure} />
       {:else}
@@ -366,7 +365,7 @@
         <button class="btn btn-circle btn-sm sticky top-0 float-right split:hidden" aria-label="Close tags" onclick={() => closeLayer('viewerTags')}>✕</button>
         {#if viewer.current !== null && failures.has(viewer.current)}<ErrorNote error={failures.get(viewer.current)} />{/if}
         <div class={['transition-opacity', tagsPost !== post && 'opacity-50']}>
-          <PostTags post={tagsPost} target={staged} site={settings.site} />
+          <PostTags post={tagsPost} target={staged} />
         </div>
       </aside>
     {/if}
@@ -410,7 +409,7 @@
         {#if viewer.turnError}<div class="w-full"><ErrorNote error={viewer.turnError} /></div>{/if}
         {#if post && !post.blockedBy.length}
           <ArtistBar {post} target={staged} class="w-full items-center" />
-          <ViewerActions {post} site={settings.site} />
+          <ViewerActions {post} />
         {/if}
         
       </nav>
@@ -420,7 +419,7 @@
         style:transform="translateY({(1 - progress) * 100}%)"
       >
         {#if progress > 0}
-          <InfoSheet {post} target={staged} site={settings.site} turnError={viewer.turnError} ondrag={(dy) => dragInfo(1, dy)} onrelease={(speed) => releaseInfo('info', speed)} />
+          <InfoSheet {post} target={staged} turnError={viewer.turnError} ondrag={(dy) => dragInfo(1, dy)} onrelease={(speed) => releaseInfo('info', speed)} />
         {/if}
       </div>
     {:else}
@@ -433,7 +432,7 @@
         {#if post && !post.blockedBy.length}
           <ArtistBar {post} target={staged} class="mr-2" />
           <button class={[BAR_BUTTON, 'split:hidden']} onclick={() => (tagsOpen ? closeLayer('viewerTags') : openLayer('viewerTags'))}>Tags</button>
-          <ViewerActions {post} site={settings.site} />
+          <ViewerActions {post} />
         {/if}
         <button class={BAR_BUTTON} aria-label="Close" title="Close (Esc)" onclick={() => viewer.close()}>✕</button>
         

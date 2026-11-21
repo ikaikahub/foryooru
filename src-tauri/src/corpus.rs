@@ -1,3 +1,4 @@
+use crate::booru::Site;
 use crate::db::Db;
 use crate::error::Result;
 use crate::search::Rating;
@@ -10,7 +11,9 @@ use std::time::{Duration, Instant};
 pub use foryooru_core::corpus::*;
 use foryooru_core::kinds::{TagKind, media_of};
 
-const FALLBACK_SITE_TOTAL: f64 = 14_000_000.0;
+// roughly how many posts each site has, until a front page brings the real count
+const FALLBACK_GELBOORU_TOTAL: f64 = 14_000_000.0;
+const FALLBACK_DANBOORU_TOTAL: f64 = 9_000_000.0;
 // tag details arrive after nearly every page, so their corrected weights are batched into one rebuild this often
 const REBUILD_INTERVAL: Duration = Duration::from_secs(120);
 
@@ -20,45 +23,68 @@ struct Loaded {
     max_seq: i64,
 }
 
+fn site_total(conn: &Connection, site: Site) -> Result<f64> {
+    let total: Option<i64> = conn.query_row(
+        "SELECT COALESCE(
+             (SELECT MAX(total) FROM search_pages WHERE site = ?1 AND query = ''),
+             (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'site_total:' || ?1))",
+        [site.key()],
+        |row| row.get(0),
+    )?;
+    Ok(total.map_or(
+        match site {
+            Site::Gelbooru => FALLBACK_GELBOORU_TOTAL,
+            Site::Danbooru => FALLBACK_DANBOORU_TOTAL,
+        },
+        |total| total as f64,
+    ))
+}
+
+// a tag's count is from Danbooru when it knows the tag, else from Gelbooru. Gelbooru's counts are scaled to
+// Danbooru's size so every tag's weight compares against the same total
 fn load_tags(conn: &Connection, corpus: &mut Corpus) -> Result<()> {
-    let site_total = conn
-        .query_row(
-            "SELECT MAX(total) FROM search_pages WHERE query = ''",
-            [],
-            |row| row.get::<_, Option<i64>>(0),
-        )?
-        .map_or(FALLBACK_SITE_TOTAL, |total| total as f64);
-    let mut statement = conn.prepare("SELECT id, name, type, site_count FROM tags")?;
+    let danbooru_total = site_total(conn, Site::Danbooru)?;
+    let gelbooru_scale = danbooru_total / site_total(conn, Site::Gelbooru)?;
+    let mut statement = conn.prepare("SELECT id, name, type, site_count, count_site FROM tags")?;
     let tags = statement
         .query_map([], |row| {
+            let count: Option<i64> = row.get(3)?;
+            let from_gelbooru = row.get::<_, Option<String>>(4)?.as_deref() == Some(Site::Gelbooru.key());
             Ok((
                 row.get::<_, i64>(0)?,
                 TagInfo {
                     name: row.get(1)?,
                     kind: row.get::<_, Option<i64>>(2)?.and_then(TagKind::from_code),
-                    count: row.get(3)?,
+                    count: count.map(|count| match from_gelbooru {
+                        true => (count as f64 * gelbooru_scale).round() as i64,
+                        false => count,
+                    }),
                 },
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    corpus.set_tags(site_total, tags);
+    corpus.set_tags(danbooru_total, tags);
     Ok(())
 }
 
 fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64> {
     let mut posts = conn.prepare(
-        "SELECT id, rating, score, md5, seq, posted_at, file_url FROM posts WHERE seq > ?1 ORDER BY seq",
+        "SELECT id, rating, score, md5, seq, posted_at, file_url FROM shown_posts WHERE seq > ?1 ORDER BY seq",
     )?;
     let rows: Vec<(NewPost, i64)> = posts
         .query_map([after_seq], |row| {
+            let id: i64 = row.get(0)?;
             let rating: String = row.get(1)?;
             let file_url: String = row.get(6)?;
             Ok((
                 NewPost {
-                    id: row.get(0)?,
+                    id,
                     rating: Rating::parse(&rating).unwrap_or(Rating::Explicit),
                     score: row.get(2)?,
-                    md5: row.get(3)?,
+                    // posts without an md5 each count as their own file
+                    md5: row
+                        .get::<_, Option<String>>(3)?
+                        .unwrap_or_else(|| format!("no md5 {id}")),
                     posted_at: row.get(5)?,
                     media: media_of(&file_url),
                     tags: Vec::new(),
@@ -91,10 +117,13 @@ fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64>
         let (post, tag) = link?;
         links.entry(post).or_default().push(tag);
     }
+    // both sites may give a post the same tag
     let new = rows
         .into_iter()
         .map(|(mut post, _)| {
             post.tags = links.remove(&post.id).unwrap_or_default();
+            post.tags.sort_unstable();
+            post.tags.dedup();
             post
         })
         .collect::<Vec<_>>();
