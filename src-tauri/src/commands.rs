@@ -376,13 +376,25 @@ pub fn toggle_like(core: CurrentCore, id: i64, chips: Vec<String>) -> Result<Pos
     Ok(state)
 }
 
-// favourites the post on every site the user is logged in to that has it
+// favourites the post on every site the user is logged in to that has it. a site that hasn't sent the post is asked
+// for it by md5 first. taking a favourite back only needs the ids already known, as those are the ones favourited
 #[tauri::command]
 pub async fn set_site_favourite(core: CurrentCore, id: i64, favourite: bool) -> Result<()> {
     let ids = catalogue::site_ids(&core.db.conn(), id)?;
     let mut failure = None;
     for site in core.logged_in_sites() {
-        let Some(site_id) = ids.get(site) else {
+        let site_id = match (ids.get(site), favourite) {
+            (Some(site_id), _) => Some(site_id),
+            (None, true) => match catalogue::find_on_site(core.inner(), id, site).await {
+                Ok(site_id) => site_id,
+                Err(error) => {
+                    failure = Some(error);
+                    None
+                }
+            },
+            (None, false) => None,
+        };
+        let Some(site_id) = site_id else {
             continue;
         };
         if let Err(error) = core.booru(site).set_favourite(site_id, favourite).await {

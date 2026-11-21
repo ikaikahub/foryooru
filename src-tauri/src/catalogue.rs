@@ -14,6 +14,8 @@ use std::sync::Arc;
 pub const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 pub const SEARCH_PAGE_MAX_AGE: i64 = 5 * 60 * 1000;
 const TAG_BATCH: usize = 100;
+// files get added to and removed from a site, so a site that didn't have one is asked again after this long
+const RECHECK_AFTER: i64 = 30 * DAY_MS;
 
 #[derive(Serialize, Clone)]
 pub struct Tag {
@@ -212,6 +214,52 @@ pub fn post_with_site_id(conn: &Connection, site: Site, site_id: i64) -> Result<
             |row| row.get(0),
         )
         .optional()?)
+}
+
+// whether a site had this file when it was last asked, by its CDN or a search. None until it's asked
+pub fn site_has_file(conn: &Connection, id: i64, site: Site) -> Result<Option<bool>> {
+    Ok(conn
+        .query_row(
+            "SELECT present FROM site_files WHERE post_id = ?1 AND site = ?2 AND checked_at > ?3",
+            params![id, site.key(), now_ms() - RECHECK_AFTER],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+pub fn remember_file(conn: &Connection, id: i64, site: Site, present: bool) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO site_files (post_id, site, present, checked_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, site.key(), present, now_ms()],
+    )?;
+    Ok(())
+}
+
+// the site's id for the post, looking the file up there by md5 when it isn't known yet
+pub async fn find_on_site(core: &Arc<Core>, id: i64, site: Site) -> Result<Option<i64>> {
+    if let Some(site_id) = site_ids(&core.db.conn(), id)?.get(site) {
+        return Ok(Some(site_id));
+    }
+    let md5: Option<String> = core
+        .db
+        .conn()
+        .query_row("SELECT md5 FROM posts WHERE id = ?1", [id], |row| row.get(0))
+        .optional()?
+        .flatten();
+    let Some(md5) = md5 else {
+        return Ok(None);
+    };
+    if !core.can_search(site) || site_has_file(&core.db.conn(), id, site)? == Some(false) {
+        return Ok(None);
+    }
+    let (raws, _) = core.booru(site).search(&format!("md5:{md5}"), 0, None).await?;
+    if raws.is_empty() {
+        remember_file(&core.db.conn(), id, site, false)?;
+        return Ok(None);
+    }
+    let stored = store_posts(&mut core.db.conn(), site, &raws, false)?;
+    after_store(core, &stored);
+    Ok(site_ids(&core.db.conn(), id)?.get(site))
 }
 
 // site rows stored from partial listings, which need fetching again by id before their details are shown

@@ -1,13 +1,11 @@
 use crate::booru::Site;
-use crate::catalogue::{self, DAY_MS, Media, MediaUrls, extension, is_still};
+use crate::catalogue::{self, Media, MediaUrls, extension, is_still};
 use crate::core::Core;
 use crate::danbooru::CDN as DANBOORU_CDN;
-use crate::db::now_ms;
 use crate::error::{Error, Result};
 use crate::gelbooru::CDN;
 use crate::images::content_type;
 use reqwest::header::{ACCEPT_RANGES, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE};
-use rusqlite::{Connection, OptionalExtension, params};
 use std::sync::Arc;
 use tauri::http::{Request, Response, StatusCode, header};
 
@@ -15,8 +13,6 @@ pub struct VideoBase(pub Option<String>);
 
 const ORIGINAL_EXTENSIONS: [&str; 7] = ["jpg", "png", "jpeg", "gif", "webp", "mp4", "webm"];
 const SAMPLE_WIDTH: i64 = 850;
-// files get added to and removed from a site, so a guess that missed is tried again after this long
-const RECHECK_AFTER: i64 = 30 * DAY_MS;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -147,25 +143,6 @@ fn known_url(kind: Kind, urls: &MediaUrls) -> String {
     }
 }
 
-// whether a site's CDN had this file when it was last tried. None until it's tried
-fn site_has_file(conn: &Connection, id: i64, site: Site) -> Result<Option<bool>> {
-    Ok(conn
-        .query_row(
-            "SELECT present FROM site_files WHERE post_id = ?1 AND site = ?2 AND checked_at > ?3",
-            params![id, site.key(), now_ms() - RECHECK_AFTER],
-            |row| row.get(0),
-        )
-        .optional()?)
-}
-
-fn remember_file(conn: &Connection, id: i64, site: Site, present: bool) -> Result<()> {
-    conn.execute(
-        "INSERT OR REPLACE INTO site_files (post_id, site, present, checked_at) VALUES (?1, ?2, ?3, ?4)",
-        params![id, site.key(), present, now_ms()],
-    )?;
-    Ok(())
-}
-
 // the CDNs to try, the one that can answer soonest first. ties split by md5 so a page's downloads go half to each
 async fn sources(core: &Arc<Core>, id: i64, kind: Kind) -> Result<(MediaUrls, Vec<Source>)> {
     let mut rows = resolve(core, id).await?;
@@ -186,7 +163,7 @@ async fn sources(core: &Arc<Core>, id: i64, kind: Kind) -> Result<(MediaUrls, Ve
         if known_sites.contains(&site) {
             continue;
         }
-        let has_file = site_has_file(&core.db.conn(), id, site)?;
+        let has_file = catalogue::site_has_file(&core.db.conn(), id, site)?;
         // samples and originals are only guessed once a thumbnail showed the site has the file
         let worth_guessing = match kind {
             Kind::Thumbnail => has_file != Some(false),
@@ -246,14 +223,14 @@ async fn fetch(core: &Arc<Core>, id: i64, kind: Kind) -> Result<(Vec<u8>, String
         match fetched {
             Ok(bytes) => {
                 if source.guessed {
-                    remember_file(&core.db.conn(), id, source.site, true)?;
+                    catalogue::remember_file(&core.db.conn(), id, source.site, true)?;
                 }
                 return Ok((bytes, source.url));
             }
             Err(error) => {
                 // a missing guessed sample only means that site made no sample, not that it lacks the file
                 if source.guessed && matches!(error, Error::NotOnCdn) && kind != Kind::Sample {
-                    remember_file(&core.db.conn(), id, source.site, false)?;
+                    catalogue::remember_file(&core.db.conn(), id, source.site, false)?;
                 }
                 failure = error;
             }
@@ -422,14 +399,14 @@ mod tests {
 
     #[test]
     fn a_missed_guess_is_remembered_until_it_is_due_again() {
-        let mut conn = Connection::open_in_memory().unwrap();
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::db::migrate(&mut conn).unwrap();
         conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
-        assert_eq!(site_has_file(&conn, 7, Site::Danbooru).unwrap(), None);
-        remember_file(&conn, 7, Site::Danbooru, false).unwrap();
-        assert_eq!(site_has_file(&conn, 7, Site::Danbooru).unwrap(), Some(false));
+        assert_eq!(catalogue::site_has_file(&conn, 7, Site::Danbooru).unwrap(), None);
+        catalogue::remember_file(&conn, 7, Site::Danbooru, false).unwrap();
+        assert_eq!(catalogue::site_has_file(&conn, 7, Site::Danbooru).unwrap(), Some(false));
         conn.execute("UPDATE site_files SET checked_at = 0", []).unwrap();
-        assert_eq!(site_has_file(&conn, 7, Site::Danbooru).unwrap(), None);
+        assert_eq!(catalogue::site_has_file(&conn, 7, Site::Danbooru).unwrap(), None);
     }
 
     #[test]
