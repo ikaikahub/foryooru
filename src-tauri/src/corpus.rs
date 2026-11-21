@@ -70,7 +70,10 @@ fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64>
     let Some(last_seq) = rows.last().map(|(_, seq)| *seq) else {
         return Ok(after_seq);
     };
+    let started = crate::timing::now();
     load_tags(conn, corpus)?;
+    crate::timing::record("corpus.tags", started.elapsed(), format!("{} tags", corpus.tags.len()));
+    let started = crate::timing::now();
     let mut links: HashMap<i64, Vec<i64>> = HashMap::with_capacity(rows.len());
     // a full build wants every link, and skipping the join halves the read
     let (sql, params): (&str, &[&dyn rusqlite::ToSql]) = if after_seq == 0 {
@@ -94,8 +97,11 @@ fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64>
             post.tags = links.remove(&post.id).unwrap_or_default();
             post
         })
-        .collect();
+        .collect::<Vec<_>>();
+    crate::timing::record("corpus.links", started.elapsed(), format!("{} posts", new.len()));
+    let started = crate::timing::now();
     corpus.append(new);
+    crate::timing::record("corpus.append", started.elapsed(), format!("{} posts stored", corpus.size()));
     Ok(last_seq)
 }
 

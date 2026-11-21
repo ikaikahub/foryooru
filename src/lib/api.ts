@@ -3,6 +3,8 @@ import { settings } from '$lib/state/settings.svelte';
 
 export type TagType = 'general' | 'artist' | 'copyright' | 'character' | 'metadata' | 'deprecated';
 export type Tag = { name: string; type: TagType | null; count: number | null };
+// alias is the name typed that the site treats as this tag, like bare_feet for barefoot
+export type Suggestion = Tag & { alias?: string | null };
 export type TagGroup = { label: string; tags: Tag[] };
 export type Media = 'image' | 'gif' | 'video';
 
@@ -141,8 +143,8 @@ export const api = {
     followedRows: (chips: string[], order: FollowedOrder) => invoke<ArtistRow[]>('followed_rows', { chips, order }),
     followedPosts: (chips: string[], page: number) => invoke<Listing>('followed_posts', { chips, page }),
     refreshFollowed: (chips: string[]) => invoke<void>('refresh_followed', { chips }),
-    relevantArtists: (artistChips: string[], chips: string[], skip: string[], limit: number, followedOnly: boolean) =>
-        invoke<string[]>('relevant_artists', { artistChips, chips, skip, limit, followedOnly }),
+    relevantArtists: (artistChips: string[], chips: string[], skip: string[], limit: number) =>
+        invoke<string[]>('relevant_artists', { artistChips, chips, skip, limit }),
     artistRows: (chips: string[], names: string[]) => invoke<ArtistRow[]>('artist_rows', { chips, names }),
     refreshArtists: (chips: string[], names: string[]) => invoke<void>('refresh_artists', { chips, names }),
     setSiteFavourite: (id: number, favourite: boolean) => invoke<void>('set_site_favourite', { id, favourite }),
@@ -150,6 +152,7 @@ export const api = {
     gelbooruLogout: () => invoke<void>('gelbooru_logout'),
     clearLikes: () => invoke<void>('clear_likes'),
     suggestTags: (typed: string) => invoke<Tag[]>('suggest_tags', { typed }),
+    suggestTagsOnline: (typed: string) => invoke<Suggestion[]>('suggest_tags_online', { typed }),
     tagsNamed: (names: string[]) => invoke<Tag[]>('tags_named', { names }),
     tagList: (list: TagList) => invoke<Tag[]>('tag_list', { list }),
     toggleTag: (list: TagList, name: string) => invoke<Tag[]>('toggle_tag', { list, name }),

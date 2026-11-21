@@ -31,12 +31,13 @@
   // what the page is waiting on, shown next to the spinner
   let fetching = $state('');
 
-  const chips = $derived(splitQuery(urlQuery(page.url)));
+  // through the query text, so other address changes (the viewer adds ?post=) don't count as a new search
+  const query = $derived(urlQuery(page.url));
+  const chips = $derived(splitQuery(query));
   // the artist search picks which artists show; without one the page lists the followed artists
   const artistQuery = $derived(page.url.searchParams.get(ARTIST_PARAM) ?? '');
   const artistChips = $derived(splitQuery(artistQuery));
   const finding = $derived(artistChips.length > 0);
-  const followedOnly = $derived(page.url.searchParams.get('followed') === 'only');
   let found = $state<string[]>([]);
   let moreToFind = $state(false);
   // a newer search makes an older one still fetching stop, so its artists don't land in the new list
@@ -80,7 +81,7 @@
         rows = null;
       }
       fetching = fresh ? `Searching ${artistChips.join(' ')}` : 'Finding more artists';
-      const next = await api.relevantArtists(artistChips, chips, found, ARTISTS_PER_PAGE, followedOnly);
+      const next = await api.relevantArtists(artistChips, chips, found, ARTISTS_PER_PAGE);
       if (search !== searches) return;
       moreToFind = next.length === ARTISTS_PER_PAGE;
       found = [...found, ...next];
@@ -98,7 +99,7 @@
   const rerun = () => (finding ? findArtists(true) : refresh());
 
   $effect(() => {
-    void [chips, artistChips, followedOnly, finding || library.followedArtists.length];
+    void [chips, artistChips, finding || library.followedArtists.length];
     untrack(rerun);
   });
 
@@ -112,7 +113,9 @@
 
 <div class="mb-2 flex flex-wrap items-center gap-2">
   <h1 class="mr-auto min-w-0 text-lg font-semibold break-words">
-    🎨 Artists{#if finding}&nbsp;related to <span class="font-mono">{artistChips.join(' ')}</span>{/if}
+    🎨 
+    {#if !finding}Followed artists{/if}
+    {#if finding}Artists related to <span class="font-mono">{artistChips.join(' ')}</span>{/if}
   </h1>
   {#if refreshing}
     <span class="flex items-center gap-1.5 text-sm opacity-70">
@@ -120,16 +123,7 @@
       {fetching}…
     </span>
   {/if}
-  {#if finding}
-    <button
-      class={['btn btn-sm', followedOnly && 'btn-primary']}
-      aria-pressed={followedOnly}
-      title="Only show artists you follow"
-      onclick={() => setParams({ followed: followedOnly ? null : 'only' })}
-    >
-      Only followed
-    </button>
-  {:else}
+  {#if !finding}
     {#if !viewAll}
       <label>
         Sort artists by:
@@ -155,7 +149,7 @@
 {:else if rows && !rows.length}
   <p class="opacity-70">
     {#if finding}
-      No {followedOnly ? 'followed ' : ''}artists found for {artistChips.join(' ')} yet.
+      No artists found for {artistChips.join(' ')} yet.
     {:else}
       Follow artists from the viewer or TikTok to see their newest posts here, or find artists with the search.
     {/if}
@@ -181,7 +175,7 @@
                 style:aspect-ratio="{post.previewWidth || 1} / {post.previewHeight || 1}"
                 onclick={() => viewer.open(post.id, row.posts.map((shown) => shown.id))}
               >
-                <img class="size-full object-cover" alt="" {@attach image(imageUrl('sample', post.id))} />
+                <img class="size-full object-cover" alt="" {@attach image(imageUrl('thumbnail', post.id))} />
               </button>
             {/each}
           </SideScroller>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type Tag } from '$lib/api';
+  import { api, type Suggestion, type Tag } from '$lib/api';
   import { looseTag, staged, type TagEditor } from '$lib/state/search.svelte';
   import { tagText } from '$lib/tags';
 
@@ -15,7 +15,7 @@
 
   const DEBOUNCE_MS = 150;
 
-  let suggestions = $state<Tag[]>([]);
+  let suggestions = $state<Suggestion[]>([]);
   let active = $state(-1);
   let timer: ReturnType<typeof setTimeout>;
   let field = $state<HTMLInputElement>();
@@ -31,12 +31,18 @@
     clearTimeout(timer);
     const typed = editor.typed.trim().replace(/^-/, '');
     if (!typed) return close();
+    // answers for text that has since changed or been picked are dropped
+    const stillTyped = () => editor.typed.trim().replace(/^-/, '') === typed;
     timer = setTimeout(async () => {
+      // stored tags show straight away, then the site's own autocomplete adds the ones they're missing
       const found = await api.suggestTags(typed);
-      if (editor.typed.trim()) {
-        suggestions = found;
-        active = -1;
-      }
+      if (!stillTyped()) return;
+      suggestions = found;
+      active = -1;
+      const online = await api.suggestTagsOnline(typed).catch(() => []);
+      if (!stillTyped()) return;
+      const shown = new Set(suggestions.map((tag) => tag.name));
+      suggestions = [...suggestions, ...online.filter((tag) => !shown.has(tag.name))];
     }, DEBOUNCE_MS);
   }
 
@@ -110,7 +116,9 @@
       {#each suggestions as tag, index (tag.name)}
         <li role="option" aria-selected={index === active}>
           <button type="button" class={['flex justify-between', index === active && 'menu-active']} onclick={() => pick(tag)}>
-            <span class={['break-all', tagText(tag.type)]}>{sign}{tag.name}</span>
+            <span class="break-all">
+              {#if tag.alias}<span class="opacity-60">{tag.alias} → </span>{/if}<span class={tagText(tag.type)}>{sign}{tag.name}</span>
+            </span>
             {#if tag.count !== null}<small class="opacity-60">{tag.count.toLocaleString()}</small>{/if}
           </button>
         </li>

@@ -1,5 +1,6 @@
 use foryooru_core::{engine, feed, search};
 mod activity;
+mod autocomplete;
 mod backup;
 mod booru;
 mod catalogue;
@@ -115,6 +116,7 @@ pub fn run() {
             commands::disliked_posts,
             commands::clear_likes,
             commands::suggest_tags,
+            commands::suggest_tags_online,
             commands::tags_named,
             commands::tag_list,
             commands::toggle_tag,

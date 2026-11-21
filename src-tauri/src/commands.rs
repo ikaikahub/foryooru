@@ -1,4 +1,5 @@
 use crate::activity::{self, ActivityPage};
+use crate::autocomplete;
 use crate::backup;
 use crate::booru::{Order, Site};
 use crate::catalogue::{self, Post, PostDetail, SEARCH_PAGE_MAX_AGE, Tag};
@@ -445,7 +446,6 @@ pub async fn relevant_artists(
     chips: Vec<String>,
     skip: Vec<String>,
     limit: usize,
-    followed_only: bool,
 ) -> Result<Vec<String>> {
     let core = core.inner();
     let ratings = Search::parse(&chips).ratings();
@@ -456,10 +456,6 @@ pub async fn relevant_artists(
             crate::platform::log(&format!("Fetching the search for the artists page failed: {error}"));
         }
     }
-    let followed: Option<HashSet<String>> = followed_only
-        .then(|| library::tag_names(&core.db.conn(), TagList::FollowedArtists))
-        .transpose()?
-        .map(|names| names.into_iter().collect());
     let search = Search::parse(&artist_chips);
     with_corpus(core, move |corpus, _| {
         let skip: HashSet<String> = skip.into_iter().collect();
@@ -469,7 +465,7 @@ pub async fn relevant_artists(
             .signature_artists(&matching, &rated)
             .into_iter()
             .filter_map(|tag| corpus.tag_name(tag).map(str::to_owned))
-            .filter(|name| !skip.contains(name) && followed.as_ref().is_none_or(|followed| followed.contains(name)))
+            .filter(|name| !skip.contains(name))
             .take(limit)
             .collect()
     })
@@ -531,6 +527,15 @@ pub fn suggest_tags(core: CurrentCore, typed: String) -> Result<Vec<Tag>> {
             .collect()),
         None => catalogue::suggest(&core.db.conn(), &typed),
     }
+}
+
+// the sites' own autocomplete, to add to suggest_tags once it answers; nothing for meta tags like sort:
+#[tauri::command]
+pub async fn suggest_tags_online(core: CurrentCore, typed: String) -> Result<Vec<autocomplete::Suggestion>> {
+    if search::meta_completions(&typed).is_some() {
+        return Ok(Vec::new());
+    }
+    Ok(autocomplete::suggest(&core.inner().http, core.inner().site, &typed).await)
 }
 
 #[tauri::command]

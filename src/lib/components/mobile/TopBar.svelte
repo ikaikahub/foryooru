@@ -71,14 +71,6 @@
       in:scale={{ duration: OPEN_MS, start: 0.5 }}
       onclick={() => closeLayer('searching')}>←</button
     >
-  {/if}
-  <form class="min-w-0 flex-1" onsubmit={submit}>
-    <TagInput bind:this={input} onsubmit={() => submit()} onfocus={() => openLayer('searching')} />
-  </form>
-  {#if algorithmPage && !searching}
-    <AlgorithmControls page={algorithmPage} buttonClass="btn-square btn-sm" compact />
-  {/if}
-  {#if searching}
     <button
       class="btn btn-square btn-ghost"
       title="Clear the search"
@@ -86,6 +78,12 @@
       onmousedown={(e) => e.preventDefault()}
       onclick={() => staged.clear()}>🧹</button
     >
+  {/if}
+  <form class="min-w-0 flex-1" onsubmit={submit}>
+    <TagInput bind:this={input} onsubmit={() => submit()} onfocus={() => openLayer('searching')} />
+  </form>
+  {#if algorithmPage && !searching}
+    <AlgorithmControls page={algorithmPage} buttonClass="btn-square btn-sm" compact />
   {/if}
 </header>
 
