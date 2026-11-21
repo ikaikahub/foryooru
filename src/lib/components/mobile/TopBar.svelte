@@ -3,10 +3,11 @@
   import { appPath, closeLayer, openLayer, runSearch } from '$lib/navigation';
   import { algorithmPageFor } from '$lib/algorithm';
   import { keepFocus } from '$lib/attachments';
-  import { searchPlaceholder, staged } from '$lib/state/search.svelte';
+  import { ARTISTS_PAGE, searchPlaceholder, staged } from '$lib/state/search.svelte';
   import { untrack } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import AlgorithmControls from '../AlgorithmControls.svelte';
+  import ArtistFilterButton from '../ArtistFilterButton.svelte';
   import TagInput from '../TagInput.svelte';
   import SearchFilters from '../sidebar/SearchFilters.svelte';
   import SearchTools from '../sidebar/SearchTools.svelte';
@@ -77,6 +78,8 @@
   </form>
   {#if searching}
     <div class="flex gap-1" in:scale={{ duration: OPEN_MS, start: 0.5 }}><SearchTools /></div>
+  {:else if appPath() === ARTISTS_PAGE}
+    <ArtistFilterButton />
   {:else if algorithmPage}
     <AlgorithmControls page={algorithmPage} buttonClass="btn-square btn-sm" compact />
   {/if}

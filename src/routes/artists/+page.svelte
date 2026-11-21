@@ -3,11 +3,13 @@
   import { page } from '$app/state';
   import { api, imageUrl, type ArtistRow, type FollowedOrder } from '$lib/api';
   import { image, onVisible } from '$lib/attachments';
+  import ArtistFilterButton from '$lib/components/ArtistFilterButton.svelte';
   import ErrorNote from '$lib/components/ErrorNote.svelte';
   import ReactedPosts from '$lib/components/ReactedPosts.svelte';
   import SelectMenu from '$lib/components/SelectMenu.svelte';
   import SideScroller from '$lib/components/SideScroller.svelte';
   import { setParams } from '$lib/navigation';
+  import { drawerLayout } from '$lib/screen';
   import { library } from '$lib/state/library.svelte';
   import { onRerun } from '$lib/state/rerun.svelte';
   import { FILTER_PARAM, RATING_BUTTONS, bare, postFilter, splitQuery, staged, urlQuery } from '$lib/state/search.svelte';
@@ -130,7 +132,7 @@
   onRerun(rerun);
 </script>
 
-<div class="mb-2 flex flex-wrap items-center gap-2">
+<div class="mb-2 flex flex-wrap items-center justify-end gap-2">
   <!-- <h1 class="mr-auto min-w-0 text-lg font-semibold break-words">
     🎨 
     {#if !finding}Followed artists{/if}
@@ -147,20 +149,11 @@
       {viewAll ? 'By artist' : 'View all'}
     </button>
   {/if}
-  <button
-    class={['btn btn-square btn-sm', chips.length && 'btn-primary']}
-    popovertarget="artist-filter"
-    style:anchor-name="--artist-filter"
-    aria-label="Filter and sort"
-    title={chips.length ? `Filtered: ${chips.join(' ')}` : 'Filter and sort'}
-  >
-    <!-- a funnel -->
-    <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 5h18l-7 8v6l-4 2v-8z" />
-    </svg>
-  </button>
-  <!-- filters the posts shown for each artist; the page's search picks the artists. overflow stays visible so the
-       tag suggestions can drop out of it -->
+  {#if !drawerLayout.current}
+    <ArtistFilterButton />
+  {/if}
+  <!-- filters the posts shown for each artist; the page's search picks the artists. the top bar holds the button for it
+       on mobile, so the menu stays here. overflow stays visible so the tag suggestions can drop out of it -->
   <div
     id="artist-filter"
     popover
