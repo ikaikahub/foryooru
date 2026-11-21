@@ -3,7 +3,7 @@
   import { appPath, closeLayer, openLayer, runSearch } from '$lib/navigation';
   import { algorithmPageFor } from '$lib/algorithm';
   import { keepFocus } from '$lib/attachments';
-  import { ARTISTS_PAGE, searchPlaceholder, staged } from '$lib/state/search.svelte';
+  import { searchPlaceholder, staged } from '$lib/state/search.svelte';
   import { untrack } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import AlgorithmControls from '../AlgorithmControls.svelte';
@@ -24,8 +24,6 @@
   const searching = $derived(page.state.searching === true);
   const hidden = $derived(scrolledDown && !searching);
   const algorithmPage = $derived(algorithmPageFor(appPath()));
-  // a trial on the Artists page: a plain box with the chips inside, no search sheet over the page
-  const plain = $derived(appPath() === ARTISTS_PAGE);
 
   $effect(() => {
     if (searching) untrack(() => !fromHistory && input?.focus());
@@ -49,8 +47,6 @@
     input?.commit();
     const query = staged.query;
     await closeLayer('searching');
-    // the plain box has no sheet to close, so the keyboard goes away here
-    if (plain) input?.blur();
     runSearch(query);
   }
 </script>
@@ -69,12 +65,6 @@
 >
   {#if searching}
     <button
-      class="btn btn-square btn-ghost text-lg"
-      aria-label="Back"
-      in:scale={{ duration: OPEN_MS, start: 0.5 }}
-      onclick={() => closeLayer('searching')}>←</button
-    >
-    <button
       class="btn btn-square btn-ghost"
       title="Clear the search"
       in:scale={{ duration: OPEN_MS, start: 0.5 }}
@@ -83,15 +73,11 @@
     >
   {/if}
   <form class="min-w-0 flex-1" onsubmit={submit}>
-    <TagInput
-      bind:this={input}
-      placeholder={searchPlaceholder(appPath())}
-      inlineChips={plain}
-      onsubmit={() => submit()}
-      onfocus={plain ? undefined : () => openLayer('searching')}
-    />
+    <TagInput bind:this={input} placeholder={searchPlaceholder(appPath())} onsubmit={() => submit()} onfocus={() => openLayer('searching')} />
   </form>
-  {#if algorithmPage && !searching}
+  {#if searching}
+    <div class="flex gap-1" in:scale={{ duration: OPEN_MS, start: 0.5 }}><SearchTools /></div>
+  {:else if algorithmPage}
     <AlgorithmControls page={algorithmPage} buttonClass="btn-square btn-sm" compact />
   {/if}
 </header>
@@ -109,7 +95,6 @@
     {@attach keepFocus}
     onsubmit={submit}
   >
-    <div class="flex justify-end gap-1"><SearchTools /></div>
     <SearchFilters />
   </form>
 {/if}

@@ -217,6 +217,27 @@
   --top-bar: var(--mobile-bar-height);
   --bottom-bar: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px));
   overscroll-behavior-y: none;
+  /* thumb-sized controls (notes/ui-rules.md): daisyUI sizes buttons, inputs and selects from this, so sm is 44px,
+     xs 33px and the default 55px, instead of 32, 24 and 40 */
+  --size-field: 0.34375rem;
+  /* the top bar holds a 44px search box */
+  --mobile-bar-height: 3.5rem;
+}
+
+/* the larger controls get matching text, or the labels look lost in them */
+:root[data-layout="drawer"] .btn-sm,
+:root[data-layout="drawer"] .input-sm,
+:root[data-layout="drawer"] .select-sm {
+  --fontsize: 0.875rem;
+}
+
+:root[data-layout="drawer"] .btn-xs {
+  --fontsize: 0.8125rem;
+}
+
+/* chips are tapped too, so they get a thumb-sized height of their own */
+:root[data-layout="drawer"] .tag-chip {
+  min-height: 2.25rem;
 }
 
 :root[data-os="linux"] {

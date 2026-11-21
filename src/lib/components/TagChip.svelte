@@ -23,7 +23,7 @@
 
 <span
   class={[
-    'inline-flex max-w-full items-center rounded-full border bg-base-100 text-sm',
+    'tag-chip inline-flex max-w-full items-center rounded-full border bg-base-100 text-sm',
     tag.startsWith('-') ? 'border-error' : tagBorder(type),
     blacklisted && 'opacity-60',
   ]}

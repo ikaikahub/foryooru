@@ -42,10 +42,11 @@
   const query = $derived(urlQuery(page.url));
   const artistChips = $derived(splitQuery(query));
   const finding = $derived(artistChips.length > 0);
+  // the title names what the artists were found for; ratings are only a limit on that
+  const titleTags = $derived(artistChips.filter((chip) => !bare(chip).startsWith('rating:')));
   // the Filter & sort menu's tags, -tags and ratings filter the posts shown for those artists
   const filterQuery = $derived(page.url.searchParams.get(FILTER_PARAM) ?? '');
   const chips = $derived(splitQuery(filterQuery));
-  let filterOpen = $state(false);
   let found = $state<string[]>([]);
   let moreToFind = $state(false);
   // a newer search makes an older one still fetching stop, so its artists don't land in the new list
@@ -130,30 +131,42 @@
 </script>
 
 <div class="mb-2 flex flex-wrap items-center gap-2">
-  <h1 class="mr-auto min-w-0 text-lg font-semibold break-words">
+  <!-- <h1 class="mr-auto min-w-0 text-lg font-semibold break-words">
     🎨 
     {#if !finding}Followed artists{/if}
-    {#if finding}Artists related to <span class="font-mono">{artistChips.join(' ')}</span>{/if}
-  </h1>
+    {#if finding}Artists related to <span class="font-mono">{titleTags.join(' ')}</span>{/if}
+  </h1> -->
   {#if refreshing}
     <span class="flex items-center gap-1.5 text-sm opacity-70">
       <span class="loading loading-spinner loading-sm"></span>
       {fetching}…
     </span>
   {/if}
-  <button class={['btn btn-sm', (filterOpen || chips.length) && 'btn-primary']} aria-expanded={filterOpen} onclick={() => (filterOpen = !filterOpen)}>
-    Filter & sort{#if chips.length}&nbsp;({chips.length}){/if}
-  </button>
   {#if !finding}
     <button class={['btn btn-sm', viewAll && 'btn-primary']} aria-pressed={viewAll} onclick={() => setParams({ view: viewAll ? null : 'all', page: null })}>
       {viewAll ? 'By artist' : 'View all'}
     </button>
   {/if}
-</div>
-
-{#if filterOpen}
-  <!-- filters the posts shown for each artist; the page's search above picks the artists -->
-  <div class="mb-3 flex flex-col gap-2 rounded-box bg-base-200 p-3">
+  <button
+    class={['btn btn-square btn-sm', chips.length && 'btn-primary']}
+    popovertarget="artist-filter"
+    style:anchor-name="--artist-filter"
+    aria-label="Filter and sort"
+    title={chips.length ? `Filtered: ${chips.join(' ')}` : 'Filter and sort'}
+  >
+    <!-- a funnel -->
+    <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+    </svg>
+  </button>
+  <!-- filters the posts shown for each artist; the page's search picks the artists. overflow stays visible so the
+       tag suggestions can drop out of it -->
+  <div
+    id="artist-filter"
+    popover
+    class="dropdown dropdown-end w-80 max-w-[calc(100vw-1rem)] flex-col gap-2 overflow-visible rounded-box bg-base-200 p-3 shadow-lg [&:popover-open]:flex"
+    style:position-anchor="--artist-filter"
+  >
     <div class="flex gap-1">
       {#each RATING_BUTTONS as rating (rating)}
         {@const chip = `rating:${rating}`}
@@ -189,7 +202,7 @@
       </label>
     {/if}
   </div>
-{/if}
+</div>
 
 {#if error}<ErrorNote {error} />{/if}
 

@@ -10,8 +10,6 @@ export interface TagEditor {
     typed: string;
     chips: Chip[];
     add(tag: string, type?: TagType | null): void;
-    remove(name: string): void;
-    toggleExclude(chip: Chip): void;
     commitTyped(): void;
 }
 

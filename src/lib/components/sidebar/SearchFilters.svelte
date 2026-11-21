@@ -1,7 +1,8 @@
 <script lang="ts">
   import SectionTitle from '../SectionTitle.svelte';
   import { library } from '$lib/state/library.svelte';
-  import { RATING_BUTTONS, bare, staged } from '$lib/state/search.svelte';
+  import { appPath } from '$lib/navigation';
+  import { ARTISTS_PAGE, RATING_BUTTONS, bare, staged } from '$lib/state/search.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
   import TagChip from '../TagChip.svelte';
 
@@ -39,6 +40,8 @@
   </div>
 {/if}
 
+<!-- the Artists page's search picks artists; ratings for their posts are in its Filter & sort menu -->
+{#if appPath() !== ARTISTS_PAGE}
 <div class="flex gap-1">
   {#each RATING_BUTTONS as rating (rating)}
     {@const chip = `rating:${rating}`}
@@ -50,6 +53,7 @@
     >
   {/each}
 </div>
+{/if}
 
 <button class="btn btn-primary btn-sm">Search</button>
 
