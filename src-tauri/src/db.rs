@@ -441,7 +441,7 @@ impl Db {
 }
 
 pub fn database_files(path: &Path) -> Vec<PathBuf> {
-    ["", "-wal", "-shm"]
+    ["", "-wal", "-shm", "-journal"]
         .iter()
         .map(|suffix| {
             let mut name = path.as_os_str().to_owned();

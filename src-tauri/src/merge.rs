@@ -491,6 +491,18 @@ mod tests {
     }
 
     #[test]
+    fn a_merge_stopped_halfway_starts_over() {
+        let dir = scratch("halfway");
+        two_files(&dir);
+        std::fs::write(dir.join(PARTIAL), b"half a database").unwrap();
+        std::fs::write(dir.join(format!("{PARTIAL}-journal")), b"a journal from the stopped merge").unwrap();
+        let db = open(&dir).unwrap();
+        assert_eq!(one(&db.conn(), "SELECT COUNT(*) FROM posts"), 3);
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_failed_merge_leaves_the_old_files_alone() {
         let dir = scratch("failed");
         let (_, path) = old_file(&dir, Site::Danbooru, &old_post(1, SHARED, 1));
