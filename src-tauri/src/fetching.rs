@@ -9,7 +9,7 @@ use crate::search::{Ratings, Search};
 use foryooru_core::fetch_plan::{self, PostTag};
 use rusqlite::OptionalExtension;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub const STORED_FOR: i64 = 30 * DAY_MS;
 const RANDOM_STORED_FOR: i64 = DAY_MS;
@@ -106,15 +106,57 @@ pub async fn refresh_followed(core: &Arc<Core>, chips: &[String]) -> Result<()> 
     refresh_artists(core, &artists, chips).await
 }
 
-// one request per artist whose newest page in the searched ratings is older than ARTIST_STORED_FOR
+// one request per artist whose newest page in the searched ratings is older than ARTIST_STORED_FOR. each site that
+// can search takes the next artist as soon as its last one is done, so their rate limits add up
 pub async fn refresh_artists(core: &Arc<Core>, artists: &[String], chips: &[String]) -> Result<()> {
     let ratings = Search::parse(chips).ratings();
-    for artist in artists {
-        let (site, query) = site_query(core, vec![artist.clone()], ratings, None).await?;
-        if let Err(error) = catalogue::fetch_page(core, site, &query, 0, ARTIST_STORED_FOR).await {
-            crate::platform::log(&format!("Fetching {artist}'s newest posts failed: {error}"));
+    let blacklist = Arc::new(library::tag_names(&core.db.conn(), TagList::Blacklist)?);
+    let sites: Arc<Vec<Site>> = Arc::new(Site::ALL.into_iter().filter(|site| core.can_search(*site)).collect());
+    let artists = Arc::new(artists.to_vec());
+    let next = Arc::new(AtomicUsize::new(0));
+    let workers: Vec<_> = sites
+        .iter()
+        .map(|site| {
+            let (core, site, sites, artists, next, blacklist) =
+                (core.clone(), *site, sites.clone(), artists.clone(), next.clone(), blacklist.clone());
+            tauri::async_runtime::spawn(async move {
+                while let Some(artist) = artists.get(next.fetch_add(1, Ordering::SeqCst)) {
+                    if let Err(error) = refresh_artist(&core, site, &sites, artist, ratings, &blacklist).await {
+                        crate::platform::log(&format!("Fetching {artist}'s newest posts failed: {error}"));
+                    }
+                }
+            })
+        })
+        .collect();
+    for worker in workers {
+        worker.await?;
+    }
+    Ok(())
+}
+
+// fetches the artist's newest page from this site, unless either site fetched it recently
+async fn refresh_artist(
+    core: &Arc<Core>,
+    site: Site,
+    sites: &[Site],
+    artist: &str,
+    ratings: Ratings,
+    blacklist: &[String],
+) -> Result<()> {
+    let search = SiteQuery {
+        tags: vec![artist.to_owned()],
+        ratings,
+        blacklist,
+        order: None,
+    };
+    for other in sites {
+        let query = core.booru(*other).render(&search).await?;
+        if catalogue::is_stored(&core.db.conn(), *other, &query, 0, ARTIST_STORED_FOR)? {
+            return Ok(());
         }
     }
+    let query = core.booru(site).render(&search).await?;
+    catalogue::fetch_page(core, site, &query, 0, ARTIST_STORED_FOR).await?;
     Ok(())
 }
 
