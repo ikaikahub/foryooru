@@ -47,11 +47,34 @@ impl Site {
         }
     }
 
-    pub fn referer_for(url: &str) -> &'static str {
+    // how the site is written in the database
+    pub fn key(self) -> &'static str {
+        match self {
+            Site::Gelbooru => "gelbooru",
+            Site::Danbooru => "danbooru",
+        }
+    }
+
+    pub fn other(self) -> Site {
+        match self {
+            Site::Gelbooru => Site::Danbooru,
+            Site::Danbooru => Site::Gelbooru,
+        }
+    }
+
+    // the site whose CDN serves this url
+    pub fn of_url(url: &str) -> Site {
         if url.contains("donmai.us") {
-            "https://danbooru.donmai.us/"
+            Site::Danbooru
         } else {
-            "https://gelbooru.com/"
+            Site::Gelbooru
+        }
+    }
+
+    pub fn referer_for(url: &str) -> &'static str {
+        match Site::of_url(url) {
+            Site::Danbooru => "https://danbooru.donmai.us/",
+            Site::Gelbooru => "https://gelbooru.com/",
         }
     }
 }

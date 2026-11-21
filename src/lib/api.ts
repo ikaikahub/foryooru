@@ -90,6 +90,7 @@ export type ErrorKind =
     | 'loginWindow'
     | 'needsDanbooruLogin'
     | 'cdnBusy'
+    | 'notOnCdn'
     | 'database'
     | 'io'
     | 'json'

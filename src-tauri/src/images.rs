@@ -24,15 +24,38 @@ const PRUNE_EVERY: u32 = 500;
 const CACHE_LIMIT_KEY: &str = "cacheLimitMb";
 pub const DEFAULT_CACHE_LIMIT_MB: u64 = if cfg!(mobile) { 512 } else { 2048 };
 
+// each CDN has its own rate limit and pause, so trouble on one doesn't slow the other down
+struct Cdn {
+    limiter: Limiter,
+    paused_until: Mutex<Option<Instant>>,
+    recent_404s: Mutex<VecDeque<Instant>>,
+}
+
+impl Cdn {
+    fn new(name: &'static str) -> Cdn {
+        Cdn {
+            limiter: Limiter::new(name, 8.0, 20.0),
+            paused_until: Mutex::new(None),
+            recent_404s: Mutex::new(VecDeque::with_capacity(REFUSAL_404S)),
+        }
+    }
+
+    fn pause_left(&self) -> Option<Duration> {
+        self.paused_until
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .and_then(|until| until.checked_duration_since(Instant::now()))
+    }
+}
+
 pub struct Images {
     app: AppHandle,
     dir: PathBuf,
     http: reqwest::Client,
-    limiter: Limiter,
+    gelbooru: Cdn,
+    danbooru: Cdn,
     slots: Semaphore,
     waiting: Semaphore,
-    paused_until: Mutex<Option<Instant>>,
-    recent_404s: Mutex<VecDeque<Instant>>,
     stored_since_prune: AtomicU32,
     pruning: Arc<AtomicBool>,
 }
@@ -55,11 +78,10 @@ impl Images {
             app,
             dir,
             http,
-            limiter: Limiter::new("images", 8.0, 20.0),
+            gelbooru: Cdn::new("gelbooru images"),
+            danbooru: Cdn::new("danbooru images"),
             slots: Semaphore::new(12),
             waiting: Semaphore::new(48),
-            paused_until: Mutex::new(None),
-            recent_404s: Mutex::new(VecDeque::with_capacity(REFUSAL_404S)),
             stored_since_prune: AtomicU32::new(0),
             pruning: Arc::new(AtomicBool::new(false)),
         }
@@ -69,13 +91,28 @@ impl Images {
         &self.dir
     }
 
-    fn path_for(&self, url: &str) -> PathBuf {
-        let key = format!("{:x}", Md5::digest(url.as_bytes()));
+    fn cdn(&self, url: &str) -> &Cdn {
+        match Site::of_url(url) {
+            Site::Gelbooru => &self.gelbooru,
+            Site::Danbooru => &self.danbooru,
+        }
+    }
+
+    // how long a download from this url's CDN would wait right now
+    pub fn wait_estimate(&self, url: &str) -> Duration {
+        let cdn = self.cdn(url);
+        cdn.pause_left()
+            .unwrap_or_default()
+            .max(cdn.limiter.wait_estimate())
+    }
+
+    fn path_for(&self, key: &str) -> PathBuf {
+        let key = format!("{:x}", Md5::digest(key.as_bytes()));
         self.dir.join(&key[..2]).join(&key[2..4]).join(key)
     }
 
-    fn read_cached(&self, url: &str) -> Option<Vec<u8>> {
-        let path = self.path_for(url);
+    fn read_cached(&self, key: &str) -> Option<Vec<u8>> {
+        let path = self.path_for(key);
         let bytes = fs::read(&path).ok()?;
         if let Ok(file) = File::options().write(true).open(&path) {
             let _ = file.set_modified(SystemTime::now());
@@ -83,8 +120,8 @@ impl Images {
         Some(bytes)
     }
 
-    fn write_cached(&self, url: &str, bytes: &[u8]) -> Result<()> {
-        let path = self.path_for(url);
+    fn write_cached(&self, key: &str, bytes: &[u8]) -> Result<()> {
+        let path = self.path_for(key);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -135,6 +172,7 @@ impl Images {
     fn refused(&self, why: &str, url: &str) {
         crate::rate_log::event("images", &format!("{why}, pausing {}s", COOLDOWN.as_secs()), url);
         let mut paused = self
+            .cdn(url)
             .paused_until
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -144,6 +182,7 @@ impl Images {
 
     fn note_404(&self, url: &str) {
         let mut recent = self
+            .cdn(url)
             .recent_404s
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -170,12 +209,8 @@ impl Images {
         max_wait: Option<Duration>,
         timeout: Duration,
     ) -> Result<reqwest::Response> {
-        let pause = self
-            .paused_until
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .and_then(|until| until.checked_duration_since(Instant::now()));
-        if let Some(pause) = pause {
+        let cdn = self.cdn(url);
+        if let Some(pause) = cdn.pause_left() {
             if max_wait.is_some_and(|max| pause > max) {
                 crate::rate_log::waited("images", "gave up during a pause", pause, url);
                 return Err(Error::CdnBusy);
@@ -183,7 +218,7 @@ impl Images {
             crate::rate_log::waited("images", "waited out a pause", pause, url);
             tokio::time::sleep(pause).await;
         }
-        if !self.limiter.acquire(max_wait, url).await {
+        if !cdn.limiter.acquire(max_wait, url).await {
             return Err(Error::CdnBusy);
         }
         let mut request = self
@@ -197,8 +232,14 @@ impl Images {
         Ok(request.send().await?)
     }
 
-    pub async fn get(&self, url: &str) -> Result<Vec<u8>> {
-        if let Some(bytes) = self.read_cached(url) {
+    pub fn cached(&self, key: &str) -> Option<Vec<u8>> {
+        self.read_cached(key)
+    }
+
+    // key names the cache entry, so the same file from either CDN fills one entry. a guessed url's 404 is expected
+    // and doesn't count towards pausing the CDN
+    pub async fn get(&self, key: &str, url: &str, guessed: bool) -> Result<Vec<u8>> {
+        if let Some(bytes) = self.read_cached(key) {
             return Ok(bytes);
         }
         let _waiting = self.waiting.try_acquire().map_err(|_| {
@@ -215,33 +256,37 @@ impl Images {
             })?
             .map_err(|_| Error::CdnBusy)?;
         crate::rate_log::waited("images", "waited for a download slot", slot_wait.elapsed(), url);
-        if let Some(bytes) = self.read_cached(url) {
+        if let Some(bytes) = self.read_cached(key) {
             return Ok(bytes);
         }
         let left = deadline.saturating_duration_since(Instant::now());
-        self.download(url, Some(left), TIMEOUT).await
+        self.download(key, url, Some(left), TIMEOUT, guessed).await
     }
 
-    pub async fn get_original(&self, url: &str) -> Result<Vec<u8>> {
-        if let Some(bytes) = self.read_cached(url) {
+    pub async fn get_original(&self, key: &str, url: &str, guessed: bool) -> Result<Vec<u8>> {
+        if let Some(bytes) = self.read_cached(key) {
             return Ok(bytes);
         }
-        self.download(url, None, ORIGINAL_TIMEOUT).await
+        self.download(key, url, None, ORIGINAL_TIMEOUT, guessed).await
     }
 
     async fn download(
         &self,
+        key: &str,
         url: &str,
         max_wait: Option<Duration>,
         timeout: Duration,
+        guessed: bool,
     ) -> Result<Vec<u8>> {
         let response = self
             .request(Method::GET, url, None, max_wait, timeout)
             .await?;
         match response.status() {
             StatusCode::NOT_FOUND => {
-                self.note_404(url);
-                return Err(Error::CdnBusy);
+                if !guessed {
+                    self.note_404(url);
+                }
+                return Err(Error::NotOnCdn);
             }
             status if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() => {
                 self.refused(&format!("got {}", status.as_u16()), url);
@@ -251,7 +296,7 @@ impl Images {
             _ => {}
         }
         let bytes = response.bytes().await?.to_vec();
-        self.write_cached(url, &bytes)?;
+        self.write_cached(key, &bytes)?;
         Ok(bytes)
     }
 

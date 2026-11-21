@@ -183,9 +183,18 @@ const MIGRATIONS: &[&str] = &["
         name       TEXT PRIMARY KEY,
         created_at INTEGER NOT NULL
     );
+", "
+    CREATE TABLE site_files (
+        post_id    INTEGER NOT NULL REFERENCES posts (id) ON DELETE CASCADE,
+        site       TEXT NOT NULL CHECK (site IN ('gelbooru', 'danbooru')),
+        present    INTEGER NOT NULL CHECK (present IN (0, 1)),
+        checked_at INTEGER NOT NULL,
+        PRIMARY KEY (post_id, site)
+    ) WITHOUT ROWID;
 "];
 
 pub const TABLES: &[&str] = &[
+    "site_files",
     "sync_snapshot",
     "followed_artists",
     "meta",

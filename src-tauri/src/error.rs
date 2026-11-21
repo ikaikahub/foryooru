@@ -27,6 +27,8 @@ pub enum Error {
     NeedsDanbooruLogin,
     #[error("The image server is busy, try again in a moment")]
     CdnBusy,
+    #[error("The image server doesn't have that file")]
+    NotOnCdn,
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
     #[error("File error: {0}")]
@@ -90,6 +92,7 @@ impl Error {
             Error::LoginWindow(_) => "loginWindow",
             Error::NeedsDanbooruLogin => "needsDanbooruLogin",
             Error::CdnBusy => "cdnBusy",
+            Error::NotOnCdn => "notOnCdn",
             Error::Database(_) => "database",
             Error::Io(_) => "io",
             Error::Json(_) => "json",

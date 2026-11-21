@@ -14,6 +14,7 @@ use crate::platform::AppHandle;
 use tokio::sync::Mutex;
 
 const API_URL: &str = "https://danbooru.donmai.us";
+pub const CDN: &str = "https://cdn.donmai.us";
 const MAX_PAGES: i64 = 1000;
 pub const MAX_OFFSET: i64 = MAX_PAGES * PAGE_SIZE;
 const REQUESTS_PER_SECOND: f64 = 1.0;

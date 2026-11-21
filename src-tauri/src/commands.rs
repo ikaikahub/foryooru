@@ -812,8 +812,7 @@ async fn download(core: &Core, url: &str) -> Result<Vec<u8>> {
 #[tauri::command]
 pub async fn save_sample(core: CurrentCore, id: i64) -> Result<gallery::SavedFile> {
     let core = core.inner();
-    let url = media::sample_url(core, id).await?;
-    let bytes = core.images.get(&url).await?;
+    let (bytes, url) = media::sample(core, id).await?;
     gallery::save(&core.app, &file_name_for(id, &url), &bytes).await
 }
 
@@ -869,12 +868,8 @@ pub async fn copy_image(core: CurrentCore, id: i64) -> Result<()> {
             &download(core, &original.url).await?,
         )?
     } else {
-        let sample = media::sample_url(core, id).await?;
-        clipboard_file(
-            core,
-            &file_name_for(id, &sample),
-            &core.images.get(&sample).await?,
-        )?
+        let (bytes, url) = media::sample(core, id).await?;
+        clipboard_file(core, &file_name_for(id, &url), &bytes)?
     };
     gallery::copy_image(&core.app, &file).await
 }
@@ -899,7 +894,7 @@ pub async fn copy_image(
         ]));
         image::load_from_memory(&bytes)?
     } else {
-        image::load_from_memory(&core.images.get(&media::sample_url(core, id).await?).await?)?
+        image::load_from_memory(&media::sample(core, id).await?.0)?
     };
     contents.push(ClipboardContent::Image(RustImageData::from_dynamic_image(
         still,
