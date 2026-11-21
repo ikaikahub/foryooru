@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { runSearch } from '$lib/navigation';
-  import { staged } from '$lib/state/search.svelte';
+  import { appPath, runSearch } from '$lib/navigation';
+  import { ARTISTS_PAGE, staged } from '$lib/state/search.svelte';
   import TagInput from '../TagInput.svelte';
+  import ArtistSearch from './ArtistSearch.svelte';
   import SearchFilters from './SearchFilters.svelte';
   import SearchTools from './SearchTools.svelte';
 
@@ -15,6 +16,7 @@
 </script>
 
 <form class="flex flex-col gap-2" onsubmit={submit}>
+  {#if appPath() === ARTISTS_PAGE}<ArtistSearch onsubmit={() => submit()} />{/if}
   <div class="flex gap-1">
     <div class="min-w-0 flex-1"><TagInput bind:this={input} onsubmit={() => submit()} /></div>
     <button type="button" class="btn btn-square btn-sm" title="Clear the search" onmousedown={(e) => e.preventDefault()} onclick={() => staged.clear()}>🧹</button>

@@ -10,7 +10,7 @@ pub enum Error {
     #[error("exporting from Postgres failed")]
     Export,
     #[error(
-        "usage: foryooru-server convert <snapshot> | serve <snapshot> [address] | simulate <snapshot> <report> <personas> <batches>"
+        "usage: foryooru-server convert <snapshot> | serve <snapshot> [address] | simulate <snapshot> <report> <personas> <batches> | replay <snapshot> <reactions> <report> | replay-users <snapshot> <favourites.sqlite> <report>"
     )]
     Usage,
 }

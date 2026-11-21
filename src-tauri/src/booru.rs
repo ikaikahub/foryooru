@@ -189,7 +189,7 @@ impl Requester {
             .map_or_else(String::new, |(_, value)| value.clone());
         let mut delays = RETRY_DELAYS.iter();
         loop {
-            self.limiter.acquire(None).await;
+            self.limiter.acquire(None, &note).await;
             let mut request = self
                 .http
                 .request(method.clone(), url)
@@ -205,9 +205,21 @@ impl Requester {
                 Ok(response) => RETRY_STATUSES.contains(&response.status().as_u16()),
                 Err(error) => error.is_request() || error.is_timeout(),
             };
-            if worth_retrying && let Some(delay) = delays.next() {
-                crate::platform::sleep(*delay).await;
-                continue;
+            if worth_retrying {
+                let reason = match &result {
+                    Ok(response) => format!("got {}", response.status().as_u16()),
+                    Err(error) if error.is_timeout() => "timed out".to_owned(),
+                    Err(_) => "couldn't connect".to_owned(),
+                };
+                let source = format!("{} api", self.site.name().to_lowercase());
+                match delays.next() {
+                    Some(delay) => {
+                        crate::rate_log::waited(&source, &format!("{reason}, retrying"), *delay, &note);
+                        crate::platform::sleep(*delay).await;
+                        continue;
+                    }
+                    None => crate::rate_log::event(&source, &format!("{reason}, gave up"), &note),
+                }
             }
             let response = result?;
             let status = response.status().as_u16();

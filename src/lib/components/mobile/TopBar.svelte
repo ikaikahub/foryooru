@@ -3,11 +3,12 @@
   import { appPath, closeLayer, openLayer, runSearch } from '$lib/navigation';
   import { algorithmPageFor } from '$lib/algorithm';
   import { keepFocus } from '$lib/attachments';
-  import { staged } from '$lib/state/search.svelte';
+  import { ARTISTS_PAGE, staged } from '$lib/state/search.svelte';
   import { untrack } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import AlgorithmControls from '../AlgorithmControls.svelte';
   import TagInput from '../TagInput.svelte';
+  import ArtistSearch from '../sidebar/ArtistSearch.svelte';
   import SearchFilters from '../sidebar/SearchFilters.svelte';
   import SearchTools from '../sidebar/SearchTools.svelte';
 
@@ -18,13 +19,15 @@
   let barHeight = $state(0);
   let scrolledDown = $state(false);
   let lastY = 0;
+  // set during Back / Forward so a restored search layer doesn't pop the keyboard
+  let fromHistory = false;
 
   const searching = $derived(page.state.searching === true);
   const hidden = $derived(scrolledDown && !searching);
   const algorithmPage = $derived(algorithmPageFor(appPath()));
 
   $effect(() => {
-    if (searching) untrack(() => input?.focus());
+    if (searching) untrack(() => !fromHistory && input?.focus());
     else untrack(() => input?.blur());
   });
 
@@ -49,7 +52,13 @@
   }
 </script>
 
-<svelte:window {onscroll} />
+<svelte:window
+  {onscroll}
+  onpopstate={() => {
+    fromHistory = true;
+    requestAnimationFrame(() => (fromHistory = false));
+  }}
+/>
 
 <header
   class={['fixed inset-x-0 top-0 z-(--z-tab-bar) flex h-(--top-bar) items-center gap-1 bg-base-200 px-1 shadow transition-transform', hidden && '-translate-y-full']}
@@ -93,6 +102,7 @@
     {@attach keepFocus}
     onsubmit={submit}
   >
+    {#if appPath() === ARTISTS_PAGE}<ArtistSearch onsubmit={() => submit()} />{/if}
     <div class="flex justify-end gap-1"><SearchTools /></div>
     <SearchFilters />
   </form>

@@ -144,7 +144,7 @@ impl Danbooru {
                 Site::Danbooru,
                 db,
                 http,
-                Limiter::new(REQUESTS_PER_SECOND, 10.0),
+                Limiter::new("danbooru api", REQUESTS_PER_SECOND, 10.0),
             ),
             tag_limit: Mutex::new(None),
         }

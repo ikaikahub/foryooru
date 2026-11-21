@@ -38,6 +38,9 @@ const SAMPLE_TRIES: usize = 200;
 const MIN_FOLD_POSTS: usize = 3;
 // posts far from the score range an interest usually likes lose up to this share of their score
 const SCORE_FIT_STRENGTH: f64 = 0.5;
+// every artist counts as having this many extra non-matching posts when ranking how much of their work matches a
+// search, so one matching post out of one doesn't beat forty out of fifty
+const SIGNATURE_HEAD_START: f64 = 5.0;
 // that score range is never narrower than this, in percentiles
 const MIN_SCORE_SPREAD: f64 = 0.15;
 
@@ -512,6 +515,43 @@ impl Corpus {
             .collect()
     }
 
+    // artists by how much of their stored work matches, best first: their matching posts over all their posts within
+    // the searched ratings, so an artist who mostly draws it beats a prolific one with a few matches
+    pub fn signature_artists(&self, matching: &Mask, rated: &Mask) -> Vec<i64> {
+        let mut counts = vec![(0usize, 0usize); self.tag_of_col.len()];
+        let mut count = |col: usize, row: usize| {
+            if rated[row] {
+                counts[col].1 += 1;
+                counts[col].0 += usize::from(matching[row]);
+            }
+        };
+        match self.postings() {
+            Some(postings) => {
+                for (col, rows) in postings.iter().enumerate().filter(|(col, _)| self.artist_col[*col]) {
+                    rows.iter().for_each(|row| count(col, *row as usize));
+                }
+            }
+            None => {
+                for row in 0..self.size() {
+                    for entry in self.entries(row) {
+                        let col = self.cols[entry] as usize;
+                        if self.artist_col[col] {
+                            count(col, row);
+                        }
+                    }
+                }
+            }
+        }
+        let mut ranked: Vec<(usize, f64)> = counts
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (matched, _))| *matched > 0)
+            .map(|(col, (matched, total))| (col, matched as f64 / (total as f64 + SIGNATURE_HEAD_START)))
+            .collect();
+        ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        ranked.into_iter().map(|(col, _)| self.tag_of_col[col]).collect()
+    }
+
     pub fn mask_of(&self, ids: impl IntoIterator<Item = i64>) -> Mask {
         let mut mask = vec![false; self.size()];
         for id in ids {
@@ -964,5 +1004,47 @@ mod tests {
         let mut tagged = corpus.posts_tagged(&["new_artist".to_owned(), "unknown_artist".to_owned()]);
         tagged.sort();
         assert_eq!(tagged, [("new_artist".to_owned(), 20)]);
+    }
+
+    #[test]
+    fn signature_artists_put_who_mostly_draws_it_first() {
+        let (prolific, devoted, lucky, armor, sky) = (1, 2, 3, 4, 5);
+        let tag = |name: &str, kind| TagInfo {
+            name: name.to_owned(),
+            kind: Some(kind),
+            count: Some(10),
+        };
+        let mut corpus = Corpus::new();
+        corpus.set_tags(
+            1_000_000.0,
+            [
+                (prolific, tag("prolific", TagKind::Artist)),
+                (devoted, tag("devoted", TagKind::Artist)),
+                (lucky, tag("lucky", TagKind::Artist)),
+                (armor, tag("armor", TagKind::General)),
+                (sky, tag("sky", TagKind::General)),
+            ],
+        );
+        // prolific: 4 of 40 posts have armor, devoted: 8 of 10, lucky: its 1 post
+        let mut posts = Vec::new();
+        for id in 0..40 {
+            posts.push(post(100 + id, if id < 4 { vec![prolific, armor] } else { vec![prolific, sky] }));
+        }
+        for id in 0..10 {
+            posts.push(post(200 + id, if id < 8 { vec![devoted, armor] } else { vec![devoted, sky] }));
+        }
+        posts.push(post(300, vec![lucky, armor]));
+        corpus.append(posts);
+
+        let rated = corpus.rating_mask(Ratings::ALL);
+        let matching = corpus.search_mask(&Search::parse(&["armor".to_owned()]));
+        let names = |tags: Vec<i64>| -> Vec<String> {
+            tags.into_iter().map(|tag| corpus.tag_name(tag).unwrap().to_owned()).collect()
+        };
+        // devoted 8/15, lucky 1/6, prolific 4/45
+        assert_eq!(names(corpus.signature_artists(&matching, &rated)), ["devoted", "lucky", "prolific"]);
+        // an artist with no matching posts isn't listed at all
+        let none = corpus.search_mask(&Search::parse(&["lucky".to_owned(), "sky".to_owned()]));
+        assert!(corpus.signature_artists(&none, &rated).is_empty());
     }
 }

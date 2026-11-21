@@ -130,7 +130,7 @@ impl Gelbooru {
                 Site::Gelbooru,
                 db,
                 http,
-                Limiter::new(REQUESTS_PER_SECOND, 5.0),
+                Limiter::new("gelbooru api", REQUESTS_PER_SECOND, 5.0),
             ),
             latest: Mutex::new(None),
         }

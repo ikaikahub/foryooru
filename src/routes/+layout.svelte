@@ -21,12 +21,12 @@
   import { applyTheme } from '$lib/theme';
   import { listen } from '@tauri-apps/api/event';
   import type { SyncStatus } from '$lib/api';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
 
   let { children } = $props();
 
-  const PULL_PAGES = new Set(['/', '/for-you', '/following', '/likes', '/disliked']);
+  const PULL_PAGES = new Set(['/', '/for-you', '/artists', '/likes', '/disliked']);
   const SCROLL_EDGE_PX = 8;
 
   let atTop = $state(true);
@@ -74,6 +74,8 @@
     // capture scroll from the page and from ScrollTable's inner scroller
     const update = (event: Event) => {
       const target = event.target;
+      // sideways rows have no vertical overflow and would read as both top and bottom
+      if (target instanceof HTMLElement && target !== document.documentElement && target.scrollHeight <= target.clientHeight + SCROLL_EDGE_PX) return;
       measure(target instanceof HTMLElement && target !== document.documentElement ? target : document.documentElement);
     };
     document.addEventListener('scroll', update, { capture: true, passive: true });
@@ -88,7 +90,8 @@
 
   $effect(() => {
     page.url;
-    untrack(() => measure(document.documentElement));
+    // wait for the new page to render so its height is known
+    untrack(() => tick().then(() => requestAnimationFrame(() => measure(document.documentElement))));
   });
 
   function oncontextmenu(e: MouseEvent) {

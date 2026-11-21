@@ -55,7 +55,7 @@ impl Images {
             app,
             dir,
             http,
-            limiter: Limiter::new(8.0, 20.0),
+            limiter: Limiter::new("images", 8.0, 20.0),
             slots: Semaphore::new(12),
             waiting: Semaphore::new(48),
             paused_until: Mutex::new(None),
@@ -132,7 +132,8 @@ impl Images {
         Ok(())
     }
 
-    fn refused(&self) {
+    fn refused(&self, why: &str, url: &str) {
+        crate::rate_log::event("images", &format!("{why}, pausing {}s", COOLDOWN.as_secs()), url);
         let mut paused = self
             .paused_until
             .lock()
@@ -141,7 +142,7 @@ impl Images {
         *paused = Some(paused.map_or(until, |current| current.max(until)));
     }
 
-    fn note_404(&self) {
+    fn note_404(&self, url: &str) {
         let mut recent = self
             .recent_404s
             .lock()
@@ -157,7 +158,7 @@ impl Images {
                 .is_some_and(|first| now - *first < REFUSAL_WINDOW);
         drop(recent);
         if burst {
-            self.refused();
+            self.refused(&format!("{REFUSAL_404S} not found in a row"), url);
         }
     }
 
@@ -176,11 +177,13 @@ impl Images {
             .and_then(|until| until.checked_duration_since(Instant::now()));
         if let Some(pause) = pause {
             if max_wait.is_some_and(|max| pause > max) {
+                crate::rate_log::waited("images", "gave up during a pause", pause, url);
                 return Err(Error::CdnBusy);
             }
+            crate::rate_log::waited("images", "waited out a pause", pause, url);
             tokio::time::sleep(pause).await;
         }
-        if !self.limiter.acquire(max_wait).await {
+        if !self.limiter.acquire(max_wait, url).await {
             return Err(Error::CdnBusy);
         }
         let mut request = self
@@ -198,12 +201,20 @@ impl Images {
         if let Some(bytes) = self.read_cached(url) {
             return Ok(bytes);
         }
-        let _waiting = self.waiting.try_acquire().map_err(|_| Error::CdnBusy)?;
+        let _waiting = self.waiting.try_acquire().map_err(|_| {
+            crate::rate_log::event("images", "queue full, skipped", url);
+            Error::CdnBusy
+        })?;
         let deadline = Instant::now() + MAX_WAIT;
+        let slot_wait = Instant::now();
         let _slot = tokio::time::timeout(MAX_WAIT, self.slots.acquire())
             .await
-            .map_err(|_| Error::CdnBusy)?
+            .map_err(|_| {
+                crate::rate_log::waited("images", "no free download slot, skipped", MAX_WAIT, url);
+                Error::CdnBusy
+            })?
             .map_err(|_| Error::CdnBusy)?;
+        crate::rate_log::waited("images", "waited for a download slot", slot_wait.elapsed(), url);
         if let Some(bytes) = self.read_cached(url) {
             return Ok(bytes);
         }
@@ -229,11 +240,11 @@ impl Images {
             .await?;
         match response.status() {
             StatusCode::NOT_FOUND => {
-                self.note_404();
+                self.note_404(url);
                 return Err(Error::CdnBusy);
             }
             status if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() => {
-                self.refused();
+                self.refused(&format!("got {}", status.as_u16()), url);
                 return Err(Error::CdnBusy);
             }
             status if !status.is_success() => return Err(Error::Status(status.as_u16())),
@@ -252,8 +263,8 @@ impl Images {
         match response.status() {
             StatusCode::OK => Some(true),
             StatusCode::NOT_FOUND => Some(false),
-            _ => {
-                self.refused();
+            status => {
+                self.refused(&format!("got {} checking a file", status.as_u16()), url);
                 None
             }
         }

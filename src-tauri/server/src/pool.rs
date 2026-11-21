@@ -5,6 +5,7 @@ use foryooru_core::corpus::{
 };
 use foryooru_core::kinds::{TagKind, is_still, media_of};
 use foryooru_core::protocol::{ServedPost, ServedTag};
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -191,6 +192,16 @@ impl Pool {
             file_url,
             posted_at: self.corpus.posted_at_of_row(row),
         })
+    }
+
+    // matches posts from another site to the same files here
+    pub fn ids_by_md5(&self, wanted: &HashSet<u128>) -> HashMap<u128, i64> {
+        self.md5s
+            .iter()
+            .enumerate()
+            .filter(|(_, md5)| wanted.contains(md5))
+            .map(|(row, md5)| (*md5, self.corpus.ids[row]))
+            .collect()
     }
 
     pub fn served_all(&self, ids: &[i64]) -> Vec<ServedPost> {

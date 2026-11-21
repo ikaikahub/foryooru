@@ -114,6 +114,7 @@ impl Sites {
     pub fn start(app: &AppHandle) -> Result<Sites> {
         let data_dir = app.path().app_data_dir()?;
         std::fs::create_dir_all(&data_dir)?;
+        crate::rate_log::start(&data_dir);
         adopt_legacy_database(&data_dir)?;
         let http = reqwest::Client::builder()
             .user_agent("foryooru/0.1")

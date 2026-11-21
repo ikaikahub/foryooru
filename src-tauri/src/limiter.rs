@@ -2,6 +2,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub struct Limiter {
+    // who it limits, for the rate limit log
+    name: &'static str,
     rate: f64,
     burst: f64,
     bucket: Mutex<Bucket>,
@@ -13,8 +15,9 @@ struct Bucket {
 }
 
 impl Limiter {
-    pub fn new(rate: f64, burst: f64) -> Limiter {
+    pub fn new(name: &'static str, rate: f64, burst: f64) -> Limiter {
         Limiter {
+            name,
             rate,
             burst,
             bucket: Mutex::new(Bucket {
@@ -24,7 +27,8 @@ impl Limiter {
         }
     }
 
-    pub async fn acquire(&self, max_wait: Option<Duration>) -> bool {
+    // details say what the request was, for the rate limit log
+    pub async fn acquire(&self, max_wait: Option<Duration>, details: &str) -> bool {
         let wait = {
             let mut bucket = self
                 .bucket
@@ -36,11 +40,14 @@ impl Limiter {
             bucket.updated = now;
             let wait = Duration::from_secs_f64(((1.0 - bucket.tokens) / self.rate).max(0.0));
             if max_wait.is_some_and(|max| wait > max) {
+                drop(bucket);
+                crate::rate_log::waited(self.name, "gave up waiting", wait, details);
                 return false;
             }
             bucket.tokens -= 1.0;
             wait
         };
+        crate::rate_log::waited(self.name, "waited", wait, details);
         if !wait.is_zero() {
             crate::platform::sleep(wait).await;
         }

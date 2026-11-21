@@ -1,19 +1,26 @@
+<script module lang="ts">
+  import { RELEASES_API, type Release } from '$lib/releases';
+
+  // kept for the session so revisiting Info doesn't spend the GitHub rate limit
+  let cachedReleases: Release[] | null = null;
+</script>
+
 <script lang="ts">
   import GroupColumns from '$lib/components/GroupColumns.svelte';
   import SettingsGroup from '$lib/components/SettingsGroup.svelte';
-  import { RELEASES_API, type Release } from '$lib/releases';
   import { onMount } from 'svelte';
 
   const CHANGELOG_RELEASES = 30;
 
-  let releases = $state<Release[] | null>(null);
+  let releases = $state<Release[] | null>(cachedReleases);
   let changelogError = $state(false);
 
   onMount(() => {
+    if (releases) return;
     fetch(`${RELEASES_API}?per_page=${CHANGELOG_RELEASES}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
       .then(
-        (found: Release[]) => (releases = found),
+        (found: Release[]) => (releases = cachedReleases = found),
         () => (changelogError = true),
       );
   });

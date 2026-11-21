@@ -124,3 +124,9 @@ class StagedSearch implements TagTarget, TagEditor {
 }
 
 export const staged = new StagedSearch();
+
+// the Artists page's second search, which picks the artists shown instead of filtering posts. it lives in the
+// address as ARTIST_PARAM
+export const artistSearch = new StagedSearch();
+export const ARTIST_PARAM = 'artists';
+export const ARTISTS_PAGE = '/artists';

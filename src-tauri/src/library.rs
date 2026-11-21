@@ -270,10 +270,28 @@ pub fn followed_rows(
     order: FollowedOrder,
     tagged: &[(String, i64)],
 ) -> Result<Vec<ArtistRow>> {
-    let followed: Vec<(String, i64)> = conn
+    let mut followed: Vec<(String, i64)> = conn
         .prepare_cached("SELECT name, created_at FROM followed_artists")?
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
+    let rows = newest_by_artist(conn, matching, tagged)?;
+    match order {
+        FollowedOrder::LatestPost => followed.sort_by_key(|(name, _)| rows.get(name).map_or(usize::MAX, |(first, _)| *first)),
+        FollowedOrder::RecentlyFollowed => followed.sort_by_key(|(_, followed_at)| std::cmp::Reverse(*followed_at)),
+        FollowedOrder::Name => followed.sort_by(|a, b| a.0.cmp(&b.0)),
+    }
+    rows_in_order(conn, followed.into_iter().map(|(name, _)| name).collect(), rows)
+}
+
+// rows for the named artists in the order given, for the artists a search found; tagged as for followed_rows
+pub fn artist_rows(conn: &Connection, matching: &Matching, names: Vec<String>, tagged: &[(String, i64)]) -> Result<Vec<ArtistRow>> {
+    let rows = newest_by_artist(conn, matching, tagged)?;
+    rows_in_order(conn, names, rows)
+}
+
+// each artist's newest matching posts that aren't blacklisted, with where their first one falls among everyone's
+// posts newest first, which is how recently they posted
+fn newest_by_artist(conn: &Connection, matching: &Matching, tagged: &[(String, i64)]) -> Result<HashMap<String, (usize, Vec<i64>)>> {
     let ids: Vec<i64> = tagged.iter().map(|(_, id)| *id).filter(|id| matching.contains(*id)).collect();
     let position: HashMap<i64, usize> = newest_first(conn, &ids)?
         .into_iter()
@@ -289,7 +307,6 @@ pub fn followed_rows(
     let (allowed, _) = without_blacklisted(conn, ids)?;
     let allowed: HashSet<i64> = allowed.into_iter().collect();
 
-    // the position of an artist's first post in the newest-first list is how recently they posted
     let mut rows: HashMap<String, (usize, Vec<i64>)> = HashMap::new();
     for (position, (name, id)) in newest_first.into_iter().enumerate() {
         if !allowed.contains(&id) {
@@ -300,20 +317,17 @@ pub fn followed_rows(
             posts.push(id);
         }
     }
-    let names: Vec<String> = followed.iter().map(|(name, _)| name.clone()).collect();
+    Ok(rows)
+}
+
+fn rows_in_order(conn: &Connection, names: Vec<String>, mut rows: HashMap<String, (usize, Vec<i64>)>) -> Result<Vec<ArtistRow>> {
     let mut tags: HashMap<String, Tag> = catalogue::tags_named(conn, &names)?
         .into_iter()
         .map(|tag| (tag.name.clone(), tag))
         .collect();
-    let mut ordered = followed;
-    match order {
-        FollowedOrder::LatestPost => ordered.sort_by_key(|(name, _)| rows.get(name).map_or(usize::MAX, |(first, _)| *first)),
-        FollowedOrder::RecentlyFollowed => ordered.sort_by_key(|(_, followed_at)| std::cmp::Reverse(*followed_at)),
-        FollowedOrder::Name => ordered.sort_by(|a, b| a.0.cmp(&b.0)),
-    }
-    ordered
+    names
         .into_iter()
-        .map(|(name, _)| {
+        .map(|name| {
             let ids = rows.remove(&name).map(|(_, ids)| ids).unwrap_or_default();
             let mut posts = catalogue::posts(conn, &ids)?;
             posts.sort_by_key(|post| ids.iter().position(|id| *id == post.id));
@@ -508,5 +522,12 @@ mod tests {
 
         let listing = followed_listing(&conn, &everything, 0, &tagged).unwrap();
         assert_eq!(listing.posts.iter().map(|post| post.id).collect::<Vec<_>>(), [3, 2, 1]);
+
+        // a search's artists keep the order they were found in, followed or not
+        let found = [("not_followed".to_owned(), 4), ("early_bird".to_owned(), 1), ("early_bird".to_owned(), 2)];
+        let searched = artist_rows(&conn, &everything, vec!["not_followed".to_owned(), "early_bird".to_owned()], &found).unwrap();
+        let searched: Vec<(String, Vec<i64>)> =
+            searched.into_iter().map(|row| (row.artist.name, row.posts.iter().map(|post| post.id).collect())).collect();
+        assert_eq!(searched, [("not_followed".to_owned(), vec![4]), ("early_bird".to_owned(), vec![2, 1])]);
     }
 }

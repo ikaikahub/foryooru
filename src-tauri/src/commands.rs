@@ -436,6 +436,60 @@ pub async fn refresh_followed(core: CurrentCore, chips: Vec<String>) -> Result<(
     fetching::refresh_followed(core.inner(), &chips).await
 }
 
+// the artists whose stored work most matches the artist search, within the ratings of the post search, skipping ones
+// already shown. the first call for a search fetches its first page, so there are posts to find artists in
+#[tauri::command]
+pub async fn relevant_artists(
+    core: CurrentCore,
+    artist_chips: Vec<String>,
+    chips: Vec<String>,
+    skip: Vec<String>,
+    limit: usize,
+    followed_only: bool,
+) -> Result<Vec<String>> {
+    let core = core.inner();
+    let ratings = Search::parse(&chips).ratings();
+    if skip.is_empty() {
+        let rating_chips = chips.iter().filter(|chip| chip.trim_start_matches('-').starts_with("rating:")).cloned();
+        let fetched: Vec<String> = artist_chips.iter().cloned().chain(rating_chips).collect();
+        if let Err(error) = fetching::fetch_search_page(core, &fetched).await {
+            crate::platform::log(&format!("Fetching the search for the artists page failed: {error}"));
+        }
+    }
+    let followed: Option<HashSet<String>> = followed_only
+        .then(|| library::tag_names(&core.db.conn(), TagList::FollowedArtists))
+        .transpose()?
+        .map(|names| names.into_iter().collect());
+    let search = Search::parse(&artist_chips);
+    with_corpus(core, move |corpus, _| {
+        let skip: HashSet<String> = skip.into_iter().collect();
+        let matching = corpus.search_mask(&search);
+        let rated = corpus.rating_mask(ratings);
+        corpus
+            .signature_artists(&matching, &rated)
+            .into_iter()
+            .filter_map(|tag| corpus.tag_name(tag).map(str::to_owned))
+            .filter(|name| !skip.contains(name) && followed.as_ref().is_none_or(|followed| followed.contains(name)))
+            .take(limit)
+            .collect()
+    })
+    .await
+}
+
+// each named artist's newest posts that match the post search, in the order given
+#[tauri::command]
+pub async fn artist_rows(core: CurrentCore, chips: Vec<String>, names: Vec<String>) -> Result<Vec<ArtistRow>> {
+    let matching = matching_posts(core.inner(), &chips).await?;
+    let wanted = names.clone();
+    let tagged = with_corpus(core.inner(), move |corpus, _| corpus.posts_tagged(&wanted)).await?;
+    library::artist_rows(&core.db.conn(), &matching, names, &tagged)
+}
+
+#[tauri::command]
+pub async fn refresh_artists(core: CurrentCore, chips: Vec<String>, names: Vec<String>) -> Result<()> {
+    fetching::refresh_artists(core.inner(), &names, &chips).await
+}
+
 #[tauri::command]
 pub async fn disliked_posts(core: CurrentCore, chips: Vec<String>, page: i64) -> Result<Listing> {
     let matching = matching_posts(core.inner(), &chips).await?;

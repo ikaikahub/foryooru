@@ -120,7 +120,11 @@ type TouchHandlers = { start: (e: TouchEvent) => void; move: (e: TouchEvent) => 
 
 // stops a tap inside this element from moving focus, so a mobile keyboard stays open
 export function keepFocus(element: HTMLElement) {
-    const prevent = (event: Event) => event.preventDefault();
+    const prevent = (event: Event) => {
+        // other fields in the element still need to take focus
+        if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]')) return;
+        event.preventDefault();
+    };
     element.addEventListener('mousedown', prevent);
     return () => element.removeEventListener('mousedown', prevent);
 }

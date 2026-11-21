@@ -3,9 +3,9 @@ import { base } from '$app/paths';
 import { page } from '$app/state';
 import { api } from '$lib/api';
 import { requestRerun } from '$lib/state/rerun.svelte';
-import { urlQuery } from '$lib/state/search.svelte';
+import { ARTIST_PARAM, ARTISTS_PAGE, artistSearch, urlQuery } from '$lib/state/search.svelte';
 
-const SEARCHABLE_PAGES = new Set(['/', '/for-you', '/tiktok', '/following', '/likes', '/disliked']);
+const SEARCHABLE_PAGES = new Set(['/', '/for-you', '/tiktok', '/artists', '/likes', '/disliked']);
 
 // the app's own paths leave out the base the site is served under (/foryooru on GitHub Pages)
 export function appPath(url: URL = page.url) {
@@ -16,6 +16,11 @@ export function runSearch(query: string, path = SEARCHABLE_PAGES.has(appPath()) 
     api.recordSearch(query).catch((error) => console.error('Recording the search failed', error));
     const target = path === appPath() ? new URL(page.url) : new URL(base + path, page.url);
     target.searchParams.set('q', query);
+    if (path === ARTISTS_PAGE) {
+        artistSearch.commitTyped();
+        if (artistSearch.query) target.searchParams.set(ARTIST_PARAM, artistSearch.query);
+        else target.searchParams.delete(ARTIST_PARAM);
+    }
     target.searchParams.delete('page');
     // the viewer's post params must not follow a new search, or a reload would reopen that post
     target.searchParams.delete('post');
@@ -28,6 +33,7 @@ export function isCurrentPage(href: string) {
     return (
         target.pathname === page.url.pathname &&
         urlQuery(target) === urlQuery(page.url) &&
+        target.searchParams.get(ARTIST_PARAM) === page.url.searchParams.get(ARTIST_PARAM) &&
         pageNumber(target) === pageNumber(page.url)
     );
 }

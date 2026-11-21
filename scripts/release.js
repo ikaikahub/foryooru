@@ -46,7 +46,7 @@ if (undoing) {
   release(currentRelease + 1);
 }
 
-// the commit messages since the newest published release, without the vN version commits
+// the commit messages since the newest published release, without the vN version commits or their reverts
 function releaseNotes() {
   git('fetch --tags --quiet');
   let previous = '';
@@ -58,7 +58,8 @@ function releaseNotes() {
   const messages = git(`log --no-merges --format=%s ${previous ? `${previous}..HEAD` : 'HEAD'}`)
     .split('\n')
     .map((message) => message.trim())
-    .filter((message) => message && !/^v\d+$/.test(message));
+    // version bumps and their undos say nothing about what changed
+    .filter((message) => message && !/^(Revert "v\d+"|v\d+)$/.test(message));
   return messages.length ? messages.map((message) => `- ${message}`).join('\n') : '- Small fixes';
 }
 

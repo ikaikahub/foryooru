@@ -5,9 +5,13 @@
 
   let {
     editor = staged,
+    placeholder = 'Add a tag…',
     onsubmit,
     onfocus,
-  }: { editor?: TagEditor; onsubmit: () => void; onfocus?: () => void } = $props();
+  }: { editor?: TagEditor; placeholder?: string; onsubmit: () => void; onfocus?: () => void } = $props();
+
+  // the Artists page shows two of these at once
+  const listId = $props.id();
 
   const DEBOUNCE_MS = 150;
 
@@ -83,13 +87,13 @@
   <input
     bind:this={field}
     class="input input-sm w-full"
-    placeholder="Add a tag…"
+    {placeholder}
     autocomplete="off"
     autocapitalize="none"
     spellcheck="false"
     role="combobox"
     aria-expanded={suggestions.length > 0}
-    aria-controls="tag-suggestions"
+    aria-controls={listId}
     bind:value={editor.typed}
     {oninput}
     {onkeydown}
@@ -98,7 +102,7 @@
   />
   {#if suggestions.length}
     <ul
-      id="tag-suggestions"
+      id={listId}
       role="listbox"
       class="menu menu-sm absolute inset-x-0 top-full z-(--z-dropdown) max-h-72 flex-nowrap overflow-y-auto rounded-b-box border border-base-300 bg-base-100 p-0 shadow"
       onmousedown={(e) => e.preventDefault()}

@@ -141,6 +141,10 @@ export const api = {
     followedRows: (chips: string[], order: FollowedOrder) => invoke<ArtistRow[]>('followed_rows', { chips, order }),
     followedPosts: (chips: string[], page: number) => invoke<Listing>('followed_posts', { chips, page }),
     refreshFollowed: (chips: string[]) => invoke<void>('refresh_followed', { chips }),
+    relevantArtists: (artistChips: string[], chips: string[], skip: string[], limit: number, followedOnly: boolean) =>
+        invoke<string[]>('relevant_artists', { artistChips, chips, skip, limit, followedOnly }),
+    artistRows: (chips: string[], names: string[]) => invoke<ArtistRow[]>('artist_rows', { chips, names }),
+    refreshArtists: (chips: string[], names: string[]) => invoke<void>('refresh_artists', { chips, names }),
     setSiteFavourite: (id: number, favourite: boolean) => invoke<void>('set_site_favourite', { id, favourite }),
     gelbooruLogin: () => invoke<GelbooruSession | null>('gelbooru_login'),
     gelbooruLogout: () => invoke<void>('gelbooru_logout'),

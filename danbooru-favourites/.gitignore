@@ -1,0 +1,6 @@
+favourites/
+__pycache__/
+favourites.sqlite
+favourites.sqlite-journal
+venv
+gelbooru-credentials.json

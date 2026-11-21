@@ -208,6 +208,11 @@ fn main() -> Result<()> {
             std::fs::write(report, replay::run(&pool.corpus, &reactions))?;
             Ok(())
         }
+        [command, snapshot, favourites, report] if command == "replay-users" => {
+            let pool = Pool::load(Path::new(snapshot))?;
+            std::fs::write(report, replay::run_users(&pool, Path::new(favourites))?)?;
+            Ok(())
+        }
         _ => Err(Error::Usage),
     }
 }

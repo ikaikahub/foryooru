@@ -92,19 +92,31 @@ async fn around(core: &Core, post_id: i64, ratings: Ratings) -> Result<Around> {
     Ok(around)
 }
 
-// each followed artist's newest page is fetched again after this long
-const FOLLOWED_STORED_FOR: i64 = 60 * 60 * 1000;
+// each artist's newest page is fetched again after this long
+const ARTIST_STORED_FOR: i64 = 60 * 60 * 1000;
 
-// one request per followed artist whose newest page is older than FOLLOWED_STORED_FOR
 pub async fn refresh_followed(core: &Arc<Core>, chips: &[String]) -> Result<()> {
-    let ratings = Search::parse(chips).ratings();
     let artists = library::tag_names(&core.db.conn(), TagList::FollowedArtists)?;
+    refresh_artists(core, &artists, chips).await
+}
+
+// one request per artist whose newest page in the searched ratings is older than ARTIST_STORED_FOR
+pub async fn refresh_artists(core: &Arc<Core>, artists: &[String], chips: &[String]) -> Result<()> {
+    let ratings = Search::parse(chips).ratings();
     for artist in artists {
         let query = site_query(core, vec![artist.clone()], ratings, None).await?;
-        if let Err(error) = catalogue::fetch_page(core, &query, 0, FOLLOWED_STORED_FOR).await {
+        if let Err(error) = catalogue::fetch_page(core, &query, 0, ARTIST_STORED_FOR).await {
             crate::platform::log(&format!("Fetching {artist}'s newest posts failed: {error}"));
         }
     }
+    Ok(())
+}
+
+// the first page of a search, so the artists page has posts to find the search's artists in
+pub async fn fetch_search_page(core: &Arc<Core>, chips: &[String]) -> Result<()> {
+    let blacklist = library::tag_names(&core.db.conn(), TagList::Blacklist)?;
+    let query = core.booru.render(&Search::parse(chips).site_query(&blacklist)).await?;
+    catalogue::fetch_page(core, &query, 0, catalogue::SEARCH_PAGE_MAX_AGE).await?;
     Ok(())
 }
 

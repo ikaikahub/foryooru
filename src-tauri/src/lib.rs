@@ -21,6 +21,7 @@ mod import;
 mod impressions;
 mod library;
 mod limiter;
+mod rate_log;
 mod media;
 mod payoff;
 mod platform;
@@ -108,6 +109,9 @@ pub fn run() {
             commands::followed_rows,
             commands::followed_posts,
             commands::refresh_followed,
+            commands::relevant_artists,
+            commands::artist_rows,
+            commands::refresh_artists,
             commands::disliked_posts,
             commands::clear_likes,
             commands::suggest_tags,

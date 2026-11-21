@@ -1339,6 +1339,7 @@ dependencies = [
  "axum",
  "foryooru-core",
  "rand 0.9.5",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
