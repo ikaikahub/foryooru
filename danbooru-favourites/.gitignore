@@ -4,3 +4,7 @@ favourites.sqlite
 favourites.sqlite-journal
 venv
 gelbooru-credentials.json
+out/
+*.md
+artist-table/bin/
+artist-table/obj/

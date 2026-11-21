@@ -32,23 +32,24 @@ pub fn dimension_of(key: i64) -> Option<usize> {
     (key < 0).then(|| (-1 - key) as usize)
 }
 
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
+// reads the bundled little-endian files, this one and the artist neighbours
+pub(crate) struct Reader<'a> {
+    pub(crate) bytes: &'a [u8],
+    pub(crate) at: usize,
 }
 
 impl<'a> Reader<'a> {
-    fn take(&mut self, count: usize) -> Option<&'a [u8]> {
+    pub(crate) fn take(&mut self, count: usize) -> Option<&'a [u8]> {
         let slice = self.bytes.get(self.at..self.at + count)?;
         self.at += count;
         Some(slice)
     }
 
-    fn u16(&mut self) -> Option<u16> {
+    pub(crate) fn u16(&mut self) -> Option<u16> {
         Some(u16::from_le_bytes(self.take(2)?.try_into().ok()?))
     }
 
-    fn u32(&mut self) -> Option<usize> {
+    pub(crate) fn u32(&mut self) -> Option<usize> {
         Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?) as usize)
     }
 }

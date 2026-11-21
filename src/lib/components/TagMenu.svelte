@@ -1,16 +1,20 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { appPath } from '$lib/navigation';
+  import { page } from '$app/state';
+  import { appPath, hrefWith } from '$lib/navigation';
   import { library } from '$lib/state/library.svelte';
-  import { ARTISTS_PAGE, artistSearch } from '$lib/state/search.svelte';
+  import { ARTISTS_PAGE, searchHref } from '$lib/state/search.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
   import PopoverMenu from './PopoverMenu.svelte';
 
   const open = $derived(tagMenu.current);
   const inSearch = $derived(open ? open.target.state(open.name) : null);
-  // the Artists page has a second search that picks the artists shown
-  const onArtistsPage = $derived(appPath() === ARTISTS_PAGE);
-  const inArtistSearch = $derived(open ? artistSearch.state(open.name) : null);
+
+  // the Artists page searching for artists who draw the tag; already there, its post filter stays and the viewer closes
+  function artistSearchHref(name: string) {
+    if (appPath() === ARTISTS_PAGE) return hrefWith(page.url, { q: name, view: null, post: null, site: null });
+    return searchHref(ARTISTS_PAGE, name);
+  }
 
   function run(action: () => unknown) {
     action();
@@ -33,13 +37,6 @@
     {#if inSearch}
       <li><button onclick={() => run(() => target.remove(name))}>❌ Remove from search</button></li>
     {/if}
-    {#if onArtistsPage}
-      {#if inArtistSearch}
-        <li><button onclick={() => run(() => artistSearch.remove(name))}>❌ Remove from artist search</button></li>
-      {:else}
-        <li><button onclick={() => run(() => artistSearch.add(name, type))}>🎨 Add to artist search</button></li>
-      {/if}
-    {/if}
     <li>
       <button onclick={() => run(() => library.toggleTag('favouriteTags', name))}>
         {library.starred.has(name) ? '✖️ Unfavourite tag' : '⭐ Favourite tag'}
@@ -58,5 +55,6 @@
       </button>
     </li>
     <li><button onclick={() => run(() => goto(target.searchHref(name)))}>🔍 Search this tag</button></li>
+    <li><button onclick={() => run(() => goto(artistSearchHref(name)))}>🎨 Artist search</button></li>
   {/if}
 </PopoverMenu>

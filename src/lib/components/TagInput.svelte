@@ -1,16 +1,25 @@
 <script lang="ts">
   import { api, type Suggestion, type Tag } from '$lib/api';
-  import { looseTag, staged, type TagEditor } from '$lib/state/search.svelte';
+  import { bare, looseTag, staged, type TagEditor } from '$lib/state/search.svelte';
   import { tagText } from '$lib/tags';
+  import TagChip from './TagChip.svelte';
 
   let {
     editor = staged,
     placeholder = 'Add a tag…',
+    inlineChips = false,
     onsubmit,
     onfocus,
-  }: { editor?: TagEditor; placeholder?: string; onsubmit: () => void; onfocus?: () => void } = $props();
+  }: {
+    editor?: TagEditor;
+    placeholder?: string;
+    // the chips sit in the box on one line that scrolls sideways, instead of being shown somewhere else
+    inlineChips?: boolean;
+    onsubmit: () => void;
+    onfocus?: () => void;
+  } = $props();
 
-  // the Artists page shows two of these at once
+  // the Artists page's filter menu shows a second one
   const listId = $props.id();
 
   const DEBOUNCE_MS = 150;
@@ -19,6 +28,13 @@
   let active = $state(-1);
   let timer: ReturnType<typeof setTimeout>;
   let field = $state<HTMLInputElement>();
+  let chipRow = $state<HTMLElement>();
+
+  // a new chip pushes the text field right, so the row follows it to keep the field in view
+  $effect(() => {
+    void editor.chips.length;
+    if (chipRow) chipRow.scrollLeft = chipRow.scrollWidth;
+  });
 
   const sign = $derived(editor.typed.trim().startsWith('-') ? '-' : '');
 
@@ -90,9 +106,39 @@
 </script>
 
 <div class="relative">
+  {#if inlineChips}
+    <!-- a tap on the box's empty space goes to the text field -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div
+      bind:this={chipRow}
+      class="input input-sm no-scrollbar flex w-full flex-nowrap items-center gap-1 overflow-x-auto"
+      onclick={() => field?.focus()}
+    >
+      {#each editor.chips as chip (chip.tag)}
+        <span class="shrink-0">
+          <TagChip tag={chip.tag} type={chip.type} title="Include / exclude" onclick={() => editor.toggleExclude(chip)}>
+            <button
+              type="button"
+              class="flex min-w-6 cursor-pointer items-center justify-center self-stretch pr-1 opacity-60 hover:opacity-100"
+              aria-label="Remove"
+              onmousedown={(e) => e.preventDefault()}
+              onclick={(e) => {
+                e.stopPropagation();
+                editor.remove(bare(chip.tag));
+              }}>×</button
+            >
+          </TagChip>
+        </span>
+      {/each}
+      {@render fieldInput('min-w-24 flex-1 border-none bg-transparent p-0 outline-none')}
+    </div>
+  {:else}
+    {@render fieldInput('input input-sm w-full')}
+  {/if}
+  {#snippet fieldInput(fieldClass: string)}
   <input
     bind:this={field}
-    class="input input-sm w-full"
+    class={fieldClass}
     {placeholder}
     autocomplete="off"
     autocapitalize="none"
@@ -106,6 +152,7 @@
     onblur={close}
     {onfocus}
   />
+  {/snippet}
   {#if suggestions.length}
     <ul
       id={listId}

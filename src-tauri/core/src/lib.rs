@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod artist_neighbours;
 pub mod corpus;
 pub mod engine;
 pub mod feed;

@@ -19,6 +19,7 @@ const saved = persisted('settings.json', {
     lastSearch: 'rating:general',
     likedSearch: '',
     dislikedSearch: '',
+    artistSearch: '',
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     sidebarCollapsed: false,
     columns: 0,

@@ -3,12 +3,11 @@
   import { appPath, closeLayer, openLayer, runSearch } from '$lib/navigation';
   import { algorithmPageFor } from '$lib/algorithm';
   import { keepFocus } from '$lib/attachments';
-  import { ARTISTS_PAGE, staged } from '$lib/state/search.svelte';
+  import { ARTISTS_PAGE, searchPlaceholder, staged } from '$lib/state/search.svelte';
   import { untrack } from 'svelte';
   import { fade, fly, scale } from 'svelte/transition';
   import AlgorithmControls from '../AlgorithmControls.svelte';
   import TagInput from '../TagInput.svelte';
-  import ArtistSearch from '../sidebar/ArtistSearch.svelte';
   import SearchFilters from '../sidebar/SearchFilters.svelte';
   import SearchTools from '../sidebar/SearchTools.svelte';
 
@@ -25,6 +24,8 @@
   const searching = $derived(page.state.searching === true);
   const hidden = $derived(scrolledDown && !searching);
   const algorithmPage = $derived(algorithmPageFor(appPath()));
+  // a trial on the Artists page: a plain box with the chips inside, no search sheet over the page
+  const plain = $derived(appPath() === ARTISTS_PAGE);
 
   $effect(() => {
     if (searching) untrack(() => !fromHistory && input?.focus());
@@ -48,6 +49,8 @@
     input?.commit();
     const query = staged.query;
     await closeLayer('searching');
+    // the plain box has no sheet to close, so the keyboard goes away here
+    if (plain) input?.blur();
     runSearch(query);
   }
 </script>
@@ -80,7 +83,13 @@
     >
   {/if}
   <form class="min-w-0 flex-1" onsubmit={submit}>
-    <TagInput bind:this={input} onsubmit={() => submit()} onfocus={() => openLayer('searching')} />
+    <TagInput
+      bind:this={input}
+      placeholder={searchPlaceholder(appPath())}
+      inlineChips={plain}
+      onsubmit={() => submit()}
+      onfocus={plain ? undefined : () => openLayer('searching')}
+    />
   </form>
   {#if algorithmPage && !searching}
     <AlgorithmControls page={algorithmPage} buttonClass="btn-square btn-sm" compact />
@@ -100,7 +109,6 @@
     {@attach keepFocus}
     onsubmit={submit}
   >
-    {#if appPath() === ARTISTS_PAGE}<ArtistSearch onsubmit={() => submit()} />{/if}
     <div class="flex justify-end gap-1"><SearchTools /></div>
     <SearchFilters />
   </form>

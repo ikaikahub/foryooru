@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { api, imageUrl, type ArtistRow, type FollowedOrder } from '$lib/api';
-  import { image } from '$lib/attachments';
+  import { image, onVisible } from '$lib/attachments';
   import ErrorNote from '$lib/components/ErrorNote.svelte';
   import ReactedPosts from '$lib/components/ReactedPosts.svelte';
   import SelectMenu from '$lib/components/SelectMenu.svelte';
@@ -10,8 +10,10 @@
   import { setParams } from '$lib/navigation';
   import { library } from '$lib/state/library.svelte';
   import { onRerun } from '$lib/state/rerun.svelte';
-  import { ARTIST_PARAM, artistSearch, splitQuery, staged, urlQuery } from '$lib/state/search.svelte';
+  import { FILTER_PARAM, RATING_BUTTONS, bare, postFilter, splitQuery, staged, urlQuery } from '$lib/state/search.svelte';
   import { viewer } from '$lib/state/viewer.svelte';
+  import TagChip from '$lib/components/TagChip.svelte';
+  import TagInput from '$lib/components/TagInput.svelte';
   import { untrack } from 'svelte';
 
   const ORDERS: { value: FollowedOrder; label: string }[] = [
@@ -21,6 +23,10 @@
   ];
   // artists found per search, and per press of See more
   const ARTISTS_PER_PAGE = 10;
+  // grey squares in a row still waiting for its posts; enough to fill a wide screen
+  const PLACEHOLDER_TILES = 8;
+  // the next artists start loading this far before the bottom comes into view, like For you
+  const LOAD_AHEAD = '0px 0px 1200px 0px';
 
   let order = $state<FollowedOrder>('latestPost');
   // in the address so Back returns to the rows
@@ -31,21 +37,29 @@
   // what the page is waiting on, shown next to the spinner
   let fetching = $state('');
 
-  // through the query text, so other address changes (the viewer adds ?post=) don't count as a new search
+  // the page's search picks which artists show, and without one the page lists the followed artists. both go through
+  // their text, so other address changes (the viewer adds ?post=) don't count as a new search
   const query = $derived(urlQuery(page.url));
-  const chips = $derived(splitQuery(query));
-  // the artist search picks which artists show; without one the page lists the followed artists
-  const artistQuery = $derived(page.url.searchParams.get(ARTIST_PARAM) ?? '');
-  const artistChips = $derived(splitQuery(artistQuery));
+  const artistChips = $derived(splitQuery(query));
   const finding = $derived(artistChips.length > 0);
+  // the Filter & sort menu's tags, -tags and ratings filter the posts shown for those artists
+  const filterQuery = $derived(page.url.searchParams.get(FILTER_PARAM) ?? '');
+  const chips = $derived(splitQuery(filterQuery));
+  let filterOpen = $state(false);
   let found = $state<string[]>([]);
   let moreToFind = $state(false);
   // a newer search makes an older one still fetching stop, so its artists don't land in the new list
   let searches = 0;
 
   $effect(() => {
-    const current = artistQuery;
-    untrack(() => artistSearch.load(current));
+    const current = filterQuery;
+    untrack(() => postFilter.load(current));
+  });
+
+  // filter changes apply as they're made; replacing the history entry keeps Back for leaving the page
+  $effect(() => {
+    const changed = postFilter.query;
+    if (changed !== untrack(() => filterQuery)) setParams({ [FILTER_PARAM]: changed || null }, { replace: true });
   });
 
   async function loadRows() {
@@ -98,10 +112,14 @@
 
   const rerun = () => (finding ? findArtists(true) : refresh());
 
+  // following or unfollowing from a row leaves the list as it is until the next visit or search
   $effect(() => {
-    void [chips, artistChips, finding || library.followedArtists.length];
+    void [chips, artistChips];
     untrack(rerun);
   });
+
+  // artists with nothing to show are left out once loading is done; until then they hold their place
+  const shownRows = $derived(rows && !refreshing ? rows.filter((row) => row.posts.length) : rows);
 
   $effect(() => {
     void order;
@@ -123,18 +141,55 @@
       {fetching}…
     </span>
   {/if}
+  <button class={['btn btn-sm', (filterOpen || chips.length) && 'btn-primary']} aria-expanded={filterOpen} onclick={() => (filterOpen = !filterOpen)}>
+    Filter & sort{#if chips.length}&nbsp;({chips.length}){/if}
+  </button>
   {#if !finding}
-    {#if !viewAll}
-      <label>
-        Sort artists by:
-        <SelectMenu bind:value={order} options={ORDERS} buttonClass="btn-sm" alignEnd title="Sort artists" />
-      </label>
-    {/if}
     <button class={['btn btn-sm', viewAll && 'btn-primary']} aria-pressed={viewAll} onclick={() => setParams({ view: viewAll ? null : 'all', page: null })}>
       {viewAll ? 'By artist' : 'View all'}
     </button>
   {/if}
 </div>
+
+{#if filterOpen}
+  <!-- filters the posts shown for each artist; the page's search above picks the artists -->
+  <div class="mb-3 flex flex-col gap-2 rounded-box bg-base-200 p-3">
+    <div class="flex gap-1">
+      {#each RATING_BUTTONS as rating (rating)}
+        {@const chip = `rating:${rating}`}
+        <button
+          class={['btn btn-sm min-w-0 flex-1 px-1 text-xs capitalize', postFilter.state(chip) === 'include' && 'btn-primary']}
+          title={rating}
+          onclick={() => postFilter.toggle(chip)}><span class="truncate">{rating}</span></button
+        >
+      {/each}
+    </div>
+    <div class="flex gap-1">
+      <button class="btn btn-square btn-sm" title="Clear the filter" onmousedown={(e) => e.preventDefault()} onclick={() => postFilter.clear()}>🧹</button>
+      <div class="min-w-0 flex-1"><TagInput editor={postFilter} placeholder="Filter their posts…" onsubmit={() => postFilter.commitTyped()} /></div>
+    </div>
+    {#if postFilter.chips.length}
+      <div class="flex flex-wrap gap-1">
+        {#each postFilter.chips as chip (chip.tag)}
+          <TagChip tag={chip.tag} type={chip.type} title="Include / exclude" onclick={() => postFilter.toggleExclude(chip)}>
+            <button
+              type="button"
+              class="-my-1 flex min-w-7 cursor-pointer items-center justify-center self-stretch py-1 pr-1 text-base opacity-60 hover:opacity-100"
+              aria-label="Remove"
+              onclick={() => postFilter.remove(bare(chip.tag))}>×</button
+            >
+          </TagChip>
+        {/each}
+      </div>
+    {/if}
+    {#if !finding && !viewAll}
+      <label class="flex items-center gap-2 text-sm">
+        Sort followed artists by:
+        <SelectMenu bind:value={order} options={ORDERS} buttonClass="btn-sm" title="Sort artists" />
+      </label>
+    {/if}
+  </div>
+{/if}
 
 {#if error}<ErrorNote {error} />{/if}
 
@@ -142,30 +197,43 @@
   <ReactedPosts
     title=""
     emptyMessage={chips.length
-      ? `None of their posts match your search: ${chips.join(' ')}`
+      ? `None of their posts match your filter: ${chips.join(' ')}`
       : 'No posts from the artists you follow yet.'}
-    load={api.followedPosts}
+    load={(_, pageIndex) => api.followedPosts(chips, pageIndex)}
   />
-{:else if rows && !rows.length}
+{:else if rows && shownRows && !shownRows.length}
   <p class="opacity-70">
-    {#if finding}
+    {#if rows.length && chips.length}
+      None of their posts match your filter: {chips.join(' ')}
+    {:else if finding}
       No artists found for {artistChips.join(' ')} yet.
+    {:else if rows.length}
+      No posts stored for the artists you follow yet.
     {:else}
       Follow artists from the viewer or TikTok to see their newest posts here, or find artists with the search.
     {/if}
   </p>
-{:else if rows}
+{:else if shownRows}
   <div class="flex flex-col gap-4">
-    {#each rows as row (row.artist.name)}
+    {#each shownRows as row (row.artist.name)}
       {@const following = library.followed.has(row.artist.name)}
       <section>
         <div class="mb-1 flex items-center gap-2">
           <button class="link truncate font-semibold link-hover" title="Search this artist" onclick={() => goto(staged.searchHref(row.artist.name))}>
             🎨 {row.artist.name.replaceAll('_', ' ')}
           </button>
-          <button class={['btn btn-xs', following ? 'btn-ghost' : 'btn-primary']} onclick={() => library.toggleTag('followedArtists', row.artist.name)}>
+          <button class={['btn btn-xs', !following && 'btn-primary']} onclick={() => library.toggleTag('followedArtists', row.artist.name)}>
             {following ? 'Unfollow' : 'Follow'}
           </button>
+          {#if query !== row.artist.name}
+            <button
+              class="btn btn-xs"
+              title="Artists this artist's fans also like"
+              onclick={() => setParams({ q: row.artist.name, view: null })}
+            >
+              Similar artists
+            </button>
+          {/if}
         </div>
         {#if row.posts.length}
           <SideScroller class="flex gap-1">
@@ -180,20 +248,25 @@
             {/each}
           </SideScroller>
         {:else}
-          <p class="text-sm opacity-60">
-            {#if refreshing}
-              Looking for posts…
-            {:else if chips.length}
-              None of their posts match your search: {chips.join(' ')}
-            {:else}
-              No posts stored for this artist yet.
-            {/if}
-          </p>
+          <!-- as tall as a row of posts, so the page doesn't jump when they arrive -->
+          <div class="flex h-40 gap-1 overflow-hidden" aria-label="Looking for posts">
+            {#each { length: PLACEHOLDER_TILES } as _, index (index)}
+              <div class="aspect-square h-40 shrink-0 animate-pulse rounded bg-base-300"></div>
+            {/each}
+          </div>
         {/if}
       </section>
     {/each}
     {#if finding && moreToFind}
-      <button class="btn btn-sm self-center" disabled={refreshing} onclick={() => findArtists(false)}>See more</button>
+      <!-- a new button after each load and when loading stops, so being in view can load more again -->
+      {#key `${found.length}/${refreshing}`}
+        <button
+          class="btn btn-sm self-center"
+          disabled={refreshing}
+          onclick={() => findArtists(false)}
+          {@attach onVisible(() => !refreshing && findArtists(false), LOAD_AHEAD)}>See more</button
+        >
+      {/key}
     {/if}
   </div>
 {:else if !error}

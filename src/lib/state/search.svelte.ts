@@ -10,6 +10,8 @@ export interface TagEditor {
     typed: string;
     chips: Chip[];
     add(tag: string, type?: TagType | null): void;
+    remove(name: string): void;
+    toggleExclude(chip: Chip): void;
     commitTyped(): void;
 }
 
@@ -32,9 +34,14 @@ export function similarId(tag: string) {
     return match ? Number(match[1]) : null;
 }
 
-type SearchSlot = 'lastSearch' | 'likedSearch' | 'dislikedSearch';
+type SearchSlot = 'lastSearch' | 'likedSearch' | 'dislikedSearch' | 'artistSearch';
 
-const OWN_SEARCHES: Record<string, SearchSlot> = { '/likes': 'likedSearch', '/disliked': 'dislikedSearch' };
+// the Artists page's search picks artists rather than posts, so another page's search mustn't carry over to it
+const OWN_SEARCHES: Record<string, SearchSlot> = {
+    '/likes': 'likedSearch',
+    '/disliked': 'dislikedSearch',
+    '/artists': 'artistSearch',
+};
 
 const slotFor = (path: string): SearchSlot => OWN_SEARCHES[path] ?? 'lastSearch';
 
@@ -125,8 +132,12 @@ class StagedSearch implements TagTarget, TagEditor {
 
 export const staged = new StagedSearch();
 
-// the Artists page's second search, which picks the artists shown instead of filtering posts. it lives in the
-// address as ARTIST_PARAM
-export const artistSearch = new StagedSearch();
-export const ARTIST_PARAM = 'artists';
 export const ARTISTS_PAGE = '/artists';
+
+// what the main search box asks for, since on the Artists page its tags pick artists
+export const searchPlaceholder = (path: string) => (path === ARTISTS_PAGE ? 'Find artists…' : 'Add a tag…');
+
+// on the Artists page the search picks the artists; this filters the posts shown for them (tags, -tags, ratings),
+// from its Filter & sort menu, and lives in the address as FILTER_PARAM
+export const postFilter = new StagedSearch();
+export const FILTER_PARAM = 'filter';

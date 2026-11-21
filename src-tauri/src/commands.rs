@@ -460,6 +460,21 @@ pub async fn relevant_artists(
             crate::platform::log(&format!("Fetching the search for the artists page failed: {error}"));
         }
     }
+    // a search for one artist shows that artist, then the artists their fans also like
+    if let [single] = artist_chips.as_slice()
+        && !single.starts_with('-')
+    {
+        let similar = foryooru_core::artist_neighbours::bundled().of(single);
+        if !similar.is_empty() {
+            let skip: HashSet<&str> = skip.iter().map(String::as_str).collect();
+            return Ok(std::iter::once(single.as_str())
+                .chain(similar)
+                .filter(|name| !skip.contains(name))
+                .take(limit)
+                .map(str::to_owned)
+                .collect());
+        }
+    }
     let search = Search::parse(&artist_chips);
     with_corpus(core, move |corpus, _| {
         let skip: HashSet<String> = skip.into_iter().collect();
