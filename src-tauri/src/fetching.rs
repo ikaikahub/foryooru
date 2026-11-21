@@ -4,7 +4,7 @@ use crate::core::Core;
 use crate::error::Result;
 use crate::feed::Leads;
 use crate::library::{self, TagList};
-use crate::queue::{Job, Priority};
+use crate::queue::{Job, PageSearch, Priority};
 use crate::search::{Ratings, Search};
 use foryooru_core::fetch_plan::{self, PostTag};
 use rusqlite::OptionalExtension;
@@ -34,30 +34,37 @@ fn tags_of(core: &Core, post_id: i64) -> Result<Vec<PostTag>> {
         .collect::<rusqlite::Result<_>>()?)
 }
 
-// the site a first page goes to, and the search in that site's terms
+// the site a first page would go to and the search in its terms, to plan pages with, and the search for a job
 async fn site_query(
     core: &Core,
     tags: Vec<String>,
     ratings: Ratings,
     order: Option<Order>,
-) -> Result<(Site, String)> {
+) -> Result<(Site, String, PageSearch)> {
     let blacklist = library::tag_names(&core.db.conn(), TagList::Blacklist)?;
-    core.route(
-        &SiteQuery {
-            tags,
-            ratings,
-            blacklist: &blacklist,
-            order,
-        },
-        0,
-    )
-    .await
+    let query = SiteQuery {
+        tags,
+        ratings,
+        blacklist: &blacklist,
+        order,
+    };
+    let (site, rendered) = core.route(&query, 0).await?;
+    Ok((site, rendered, page_search(core, &query).await?))
 }
 
-fn page_job(site: Site, query: String, page: i64, max_age: i64, lead: Option<String>) -> Job {
+async fn page_search(core: &Core, query: &SiteQuery<'_>) -> Result<PageSearch> {
+    let only = (core.can_search(Site::Gelbooru) && !core.danbooru.takes_whole(query).await?).then_some(Site::Gelbooru);
+    Ok(PageSearch {
+        tags: query.tags.clone(),
+        ratings: query.ratings,
+        order: query.order,
+        only,
+    })
+}
+
+fn page_job(search: PageSearch, page: i64, max_age: i64, lead: Option<String>) -> Job {
     Job::Page {
-        site,
-        query,
+        search,
         page,
         max_age,
         lead,
@@ -80,10 +87,10 @@ struct Around {
 
 async fn target_jobs(core: &Core, tag: &PostTag, ratings: Ratings) -> Result<Vec<Job>> {
     let fetch_plan::TagFetch { order, pages } = fetch_plan::tag_fetch(tag);
-    let (site, query) = site_query(core, vec![tag.name.clone()], ratings, order).await?;
+    let (site, query, search) = site_query(core, vec![tag.name.clone()], ratings, order).await?;
     Ok(unfetched_pages(core, site, &query, STORED_FOR, pages, tag.count)?
         .into_iter()
-        .map(|page| page_job(site, query.clone(), page, STORED_FOR, Some(tag.name.clone())))
+        .map(|page| page_job(search.clone(), page, STORED_FOR, Some(tag.name.clone())))
         .collect())
 }
 
@@ -275,11 +282,12 @@ async fn shuffled_search_job(core: &Core, search: &Search) -> Result<Option<Job>
         ..base
     };
     let (site, query) = core.route(&site_query, 0).await?;
+    let job_search = page_search(core, &site_query).await?;
     let random = !sorted && core.booru(site).order_fits(site_query.tags.len()).await?;
     if random {
-        return Ok(Some(page_job(site, query, 0, ALWAYS_FETCH, None)));
+        return Ok(Some(page_job(job_search, 0, ALWAYS_FETCH, None)));
     }
-    next_page_job(core, site, query, RANDOM_STORED_FOR)
+    next_page_job(core, site, &query, job_search, RANDOM_STORED_FOR)
 }
 
 fn unfetched_pages(
@@ -307,11 +315,11 @@ fn unfetched_pages(
     Ok(unfetched)
 }
 
-fn next_page_job(core: &Core, site: Site, query: String, max_age: i64) -> Result<Option<Job>> {
-    let page = unfetched_pages(core, site, &query, max_age, 1, None)?
+fn next_page_job(core: &Core, site: Site, query: &str, search: PageSearch, max_age: i64) -> Result<Option<Job>> {
+    let page = unfetched_pages(core, site, query, max_age, 1, None)?
         .into_iter()
         .next();
-    Ok(page.map(|page| page_job(site, query, page, max_age, None)))
+    Ok(page.map(|page| page_job(search, page, max_age, None)))
 }
 
 pub async fn fetch_more_similar(core: &Core, search: &Search) -> Result<()> {
@@ -331,8 +339,8 @@ pub async fn fetch_more_similar(core: &Core, search: &Search) -> Result<()> {
 }
 
 async fn lead_job(core: &Core, tag: String, ratings: Ratings) -> Result<Job> {
-    let (site, query) = site_query(core, vec![tag.clone()], ratings, Some(Order::Random)).await?;
-    Ok(page_job(site, query, 0, ALWAYS_FETCH, Some(tag)))
+    let (_, _, search) = site_query(core, vec![tag.clone()], ratings, Some(Order::Random)).await?;
+    Ok(page_job(search, 0, ALWAYS_FETCH, Some(tag)))
 }
 
 async fn refill_jobs(core: &Core, chips: &[String], leads: Leads) -> Result<Vec<Job>> {
@@ -354,8 +362,8 @@ async fn refill_jobs(core: &Core, chips: &[String], leads: Leads) -> Result<Vec<
         jobs.push(lead_job(core, tag, ratings).await?);
     }
     if jobs.is_empty() {
-        let (site, recent) = site_query(core, Vec::new(), ratings, None).await?;
-        jobs.extend(next_page_job(core, site, recent, RECENT_STORED_FOR)?);
+        let (site, recent, search) = site_query(core, Vec::new(), ratings, None).await?;
+        jobs.extend(next_page_job(core, site, &recent, search, RECENT_STORED_FOR)?);
     }
     Ok(jobs)
 }
