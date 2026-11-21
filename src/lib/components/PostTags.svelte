@@ -19,6 +19,7 @@
   import { api, type PostDetail } from '$lib/api';
   import { formatBytes } from '$lib/format';
   import { signal } from '$lib/signals';
+  import { SITES } from '$lib/sites';
   import { library } from '$lib/state/library.svelte';
   import type { TagTarget } from '$lib/state/search.svelte';
   import { tagMenu } from '$lib/state/tagMenu.svelte';
@@ -70,8 +71,10 @@
   {/each}
   <SectionTitle>Info</SectionTitle>
   <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-    <dt class="opacity-60">Score</dt>
-    <dd>{post.score}</dd>
+    {#each post.siteValues as values (values.site)}
+      <dt class="opacity-60">{SITES[values.site].label} score</dt>
+      <dd>{values.score}</dd>
+    {/each}
     {#if post.width}
       <dt class="opacity-60">Dimensions</dt>
       <dd>{post.width} × {post.height}</dd>
@@ -86,7 +89,9 @@
     {/if}
     <dt class="opacity-60">Type</dt>
     <dd>{post.fileExt}</dd>
-    <dt class="opacity-60">Age rating</dt>
-    <dd class="capitalize">{post.rating}</dd>
+    {#each post.siteValues as values (values.site)}
+      <dt class="opacity-60">{SITES[values.site].label} rating</dt>
+      <dd class="capitalize">{values.rating}</dd>
+    {/each}
   </dl>
 </div>

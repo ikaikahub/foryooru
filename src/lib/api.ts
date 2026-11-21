@@ -27,7 +27,9 @@ export type Post = {
 // each site's id for the post, when that site has it
 export type SiteIds = { gelbooru: number | null; danbooru: number | null };
 
-export type PostDetail = Post & { tagGroups: TagGroup[]; blockedBy: string[] };
+// what one site says about a post, Danbooru's first
+export type SiteValues = { site: Site; score: number; rating: string };
+export type PostDetail = Post & { tagGroups: TagGroup[]; blockedBy: string[]; siteValues: SiteValues[] };
 export type PostState = { id: number; liked: boolean; disliked: boolean };
 export type SaveFolder = { location: string; label: string };
 export type SavedFile = { name: string; folder: string };

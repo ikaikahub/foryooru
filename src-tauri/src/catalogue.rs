@@ -76,6 +76,14 @@ pub struct Post {
     pub sites: SiteIds,
 }
 
+// what one site says about a post, for the viewer to show next to the other site's
+#[derive(Serialize)]
+pub struct SiteValues {
+    pub site: Site,
+    pub score: i64,
+    pub rating: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PostDetail {
@@ -83,6 +91,7 @@ pub struct PostDetail {
     pub post: Post,
     pub tag_groups: Vec<TagGroup>,
     pub blocked_by: Vec<String>,
+    pub site_values: Vec<SiteValues>,
 }
 
 const POST_COLUMNS: &str = "p.id, p.rating, p.score, p.width, p.height, p.preview_width, p.preview_height, p.posted_at, p.file_url,
@@ -134,6 +143,9 @@ pub fn post_details(conn: &Connection, ids: &[i64]) -> Result<Vec<PostDetail>> {
         "SELECT t.name FROM tags t JOIN blacklist b ON b.name = t.name
          WHERE t.id IN (SELECT tag_id FROM post_tags WHERE post_id = ?1) ORDER BY t.name",
     )?;
+    let mut site_values = conn.prepare_cached(
+        "SELECT site, score, rating FROM site_posts WHERE post_id = ?1 ORDER BY site",
+    )?;
     posts(conn, ids)?
         .into_iter()
         .map(|post| {
@@ -143,10 +155,17 @@ pub fn post_details(conn: &Connection, ids: &[i64]) -> Result<Vec<PostDetail>> {
             let blocked_by = blocked_by
                 .query_map([post.id], |row| row.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
+            let site_values = site_values
+                .query_map([post.id], |row| Ok((row.get::<_, String>(0)?, row.get(1)?, row.get(2)?)))?
+                .collect::<rusqlite::Result<Vec<(String, i64, String)>>>()?
+                .into_iter()
+                .filter_map(|(site, score, rating)| Some(SiteValues { site: Site::from_key(&site)?, score, rating }))
+                .collect();
             Ok(PostDetail {
                 post,
                 tag_groups: group_tags(tags),
                 blocked_by,
+                site_values,
             })
         })
         .collect()
@@ -734,6 +753,8 @@ pub(crate) mod tests {
         assert_eq!((ids.danbooru, ids.gelbooru), (Some(5), Some(900)));
         assert_eq!(tag_names(&conn, id), ["cat", "cloud", "sky"]);
         assert_eq!(post_count(&conn, "cat"), 1);
+        let shown: Vec<Site> = post_details(&conn, &[id]).unwrap()[0].site_values.iter().map(|values| values.site).collect();
+        assert_eq!(shown, [Site::Danbooru, Site::Gelbooru]);
     }
 
     #[test]
