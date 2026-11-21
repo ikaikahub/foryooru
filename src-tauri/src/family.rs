@@ -97,8 +97,17 @@ pub async fn members(core: &Arc<Core>, id: i64) -> Result<Option<Vec<i64>>> {
         root_id = fetch(core, site, format!("id:{root}")).await?.first().copied();
     }
     children.retain(|child| Some(*child) != root_id);
-    children.sort_unstable();
-    children.dedup();
+    // in the order the site posted them, which its ids follow
+    {
+        let conn = core.db.conn();
+        let mut site_ids = Vec::with_capacity(children.len());
+        for child in &children {
+            site_ids.push((catalogue::site_ids(&conn, *child)?.get(site), *child));
+        }
+        site_ids.sort_unstable();
+        site_ids.dedup();
+        children = site_ids.into_iter().map(|(_, child)| child).collect();
+    }
     if children.is_empty() {
         return Ok(None);
     }
