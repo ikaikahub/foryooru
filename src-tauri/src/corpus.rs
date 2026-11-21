@@ -69,7 +69,7 @@ fn load_tags(conn: &Connection, corpus: &mut Corpus) -> Result<()> {
 
 fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64> {
     let mut posts = conn.prepare(
-        "SELECT id, rating, score, md5, seq, posted_at, file_url FROM shown_posts WHERE seq > ?1 ORDER BY seq",
+        "SELECT id, rating, score, md5, seq, posted_at, file_url, site = 'danbooru' FROM shown_posts WHERE seq > ?1 ORDER BY seq",
     )?;
     let rows: Vec<(NewPost, i64)> = posts
         .query_map([after_seq], |row| {
@@ -81,6 +81,8 @@ fn append(conn: &Connection, corpus: &mut Corpus, after_seq: i64) -> Result<i64>
                     id,
                     rating: Rating::parse(&rating).unwrap_or(Rating::Explicit),
                     score: row.get(2)?,
+                    // 1 for Danbooru, 0 for Gelbooru
+                    score_site: row.get(7)?,
                     // posts without an md5 each count as their own file
                     md5: row
                         .get::<_, Option<String>>(3)?

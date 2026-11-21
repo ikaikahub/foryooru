@@ -73,6 +73,8 @@ pub struct NewPost {
     pub id: i64,
     pub rating: Rating,
     pub score: i64,
+    // which site the score is from. the sites score on different scales, so scores only compare within one
+    pub score_site: u8,
     pub md5: String,
     pub posted_at: Option<i64>,
     pub media: Media,
@@ -113,6 +115,7 @@ pub struct Corpus {
     pub ids: Vec<i64>,
     ratings: Vec<Rating>,
     scores: Vec<i64>,
+    score_sites: Vec<u8>,
     score_percentiles: Vec<f64>,
     posted_at: Vec<Option<i64>>,
     md5s: Vec<u128>,
@@ -282,6 +285,7 @@ impl Corpus {
             self.ids.push(post.id);
             self.ratings.push(post.rating);
             self.scores.push(post.score);
+            self.score_sites.push(post.score_site);
             self.posted_at.push(post.posted_at);
             self.media.push(post.media);
             self.md5s.push(md5_key(&post.md5));
@@ -447,10 +451,6 @@ impl Corpus {
             .map_or_else(Vec::new, |row| self.artists_of_row(*row))
     }
 
-    pub fn newest_id(&self) -> i64 {
-        self.ids.iter().copied().max().unwrap_or(0)
-    }
-
     fn artists_of_row(&self, row: usize) -> Vec<i64> {
         self.entries(row)
             .map(|entry| self.cols[entry] as usize)
@@ -478,6 +478,7 @@ impl Corpus {
             id: self.ids[row],
             rating: self.ratings[row],
             score: self.scores[row],
+            score_site: self.score_sites[row],
             md5: format!("{:032x}", self.md5s[row]),
             posted_at: self.posted_at[row],
             media: self.media[row],
@@ -671,7 +672,8 @@ impl Corpus {
         match order {
             Order::Score => self.scores[row] as f64,
             Order::Popular => engine::hotness(self.scores[row], self.posted_at[row], now),
-            Order::Newest => self.ids[row] as f64,
+            // ids are only local, so posts without a date sort before every dated one, in the order they were stored
+            Order::Newest => self.posted_at[row].map_or(row as f64, |at| at as f64),
             Order::Random => {
                 let mut hasher = DefaultHasher::new();
                 (self.ids[row], seed).hash(&mut hasher);
@@ -680,11 +682,15 @@ impl Corpus {
         }
     }
 
+    // each post's place among the posts with its rating and score site
     fn percentile_of(&self, mask: &Mask, key: impl Fn(usize) -> f64) -> Vec<f64> {
         let mut out = vec![0.0; self.size()];
-        for rating in Rating::ALL {
+        let mut sites: Vec<u8> = self.score_sites.clone();
+        sites.sort_unstable();
+        sites.dedup();
+        for (rating, site) in Rating::ALL.into_iter().flat_map(|rating| sites.iter().map(move |site| (rating, *site))) {
             let mut rows: Vec<usize> = (0..self.size())
-                .filter(|row| mask[*row] && self.ratings[*row] == rating)
+                .filter(|row| mask[*row] && self.ratings[*row] == rating && self.score_sites[*row] == site)
                 .collect();
             rows.sort_by(|a, b| {
                 key(*a)
@@ -963,11 +969,31 @@ mod tests {
             id,
             rating: Rating::General,
             score: 1,
+            score_site: 0,
             md5: format!("{id:032x}"),
             posted_at: None,
             media: Media::Image,
             tags,
         }
+    }
+
+    #[test]
+    fn scores_only_compare_within_their_site() {
+        let mut corpus = Corpus::new();
+        let scored = |id, score, score_site| NewPost { score, score_site, ..post(id, Vec::new()) };
+        // Danbooru's scores run higher, but each site's best post is at the top of its own site
+        corpus.append(vec![scored(1, 5, 0), scored(2, 40, 0), scored(3, 100, 1), scored(4, 400, 1)]);
+        assert_eq!(corpus.score_level(2), corpus.score_level(4));
+        assert_eq!(corpus.score_level(1), corpus.score_level(3));
+    }
+
+    #[test]
+    fn newest_follows_when_posts_were_posted() {
+        let mut corpus = Corpus::new();
+        let dated = |id, posted_at| NewPost { posted_at, ..post(id, Vec::new()) };
+        corpus.append(vec![dated(1, Some(300)), dated(2, Some(100)), dated(3, None)]);
+        let keys = corpus.sort_keys(Order::Newest, &vec![true; 3], 0);
+        assert!(keys[&1] > keys[&2] && keys[&2] > keys[&3]);
     }
 
     #[test]

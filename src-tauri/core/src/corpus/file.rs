@@ -4,7 +4,7 @@ use crate::search::Rating;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 
-const MAGIC: &[u8; 8] = b"FYINDX01";
+const MAGIC: &[u8; 8] = b"FYINDX02";
 const NONE: i64 = i64::MIN;
 const NO_KIND: u8 = u8::MAX;
 const MEDIA: [Media; 3] = [Media::Image, Media::Gif, Media::Video];
@@ -109,6 +109,7 @@ impl Corpus {
                 .collect::<Vec<u8>>(),
         )?;
         write_values(out, &self.scores)?;
+        write_values(out, &self.score_sites)?;
         write_values(out, &self.score_percentiles)?;
         write_values(
             out,
@@ -196,6 +197,7 @@ impl Corpus {
             })
             .collect::<io::Result<_>>()?;
         let scores = read_values(input)?;
+        let score_sites = read_values(input)?;
         let score_percentiles = read_values(input)?;
         let posted_at = read_values::<i64>(input)?
             .into_iter()
@@ -256,6 +258,7 @@ impl Corpus {
             ids,
             ratings,
             scores,
+            score_sites,
             score_percentiles,
             posted_at,
             md5s,

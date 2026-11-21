@@ -137,6 +137,7 @@ impl Pool {
                 id: post.id,
                 rating: post.rating,
                 score: post.score,
+                score_site: 0,
                 md5: post.md5.clone(),
                 posted_at: post.posted_at,
                 media: media_of(&format!("file.{}", post.ext)),
