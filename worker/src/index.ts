@@ -21,7 +21,6 @@ interface ItemRow {
   post: string | null;
 }
 
-const SITES = new Set(['gelbooru', 'danbooru']);
 const LISTS = new Set(['like', 'dislike', 'favouriteTag', 'blacklist', 'savedSearch', 'followedArtist']);
 const USERNAME = /^[a-z0-9_.-]{3,32}$/;
 // the app stretches the password with argon2 and sends the 32 byte result as hex
@@ -141,10 +140,9 @@ async function logOut(env: Env, request: Request) {
   if (token) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?1').bind(await sha256(token)).run();
 }
 
-function siteOf(body: unknown) {
-  const { site } = (body ?? {}) as Record<string, unknown>;
-  if (typeof site !== 'string' || !SITES.has(site)) throw new HttpError(400, 'Unknown site');
-  return site;
+// apps from before the merged database sync each site apart, keyed by site post ids, which would mix with md5 keys
+function refuseOldApps(body: unknown) {
+  if (typeof body === 'object' && body !== null && 'site' in body) throw new HttpError(400, 'Update the app to sync');
 }
 
 function validItem(value: unknown): value is Item {
@@ -164,7 +162,7 @@ function validItem(value: unknown): value is Item {
 }
 
 async function push(env: Env, userId: number, body: unknown) {
-  const site = siteOf(body);
+  refuseOldApps(body);
   const { items } = body as { items: unknown };
   if (!Array.isArray(items) || items.length > PUSH_LIMIT || !items.every(validItem)) {
     throw new HttpError(400, 'Malformed changes');
@@ -175,27 +173,27 @@ async function push(env: Env, userId: number, body: unknown) {
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET version = version + 1 WHERE id = ?1').bind(userId),
     env.DB.prepare(
-      `INSERT INTO items (user_id, site, list, key, present, sort_at, changed_at, version, post)
-       SELECT ?1, ?2, value ->> 'list', value ->> 'key', value ->> 'present', value ->> 'sortAt', value ->> 'changedAt',
+      `INSERT INTO items (user_id, list, key, present, sort_at, changed_at, version, post)
+       SELECT ?1, value ->> 'list', value ->> 'key', value ->> 'present', value ->> 'sortAt', value ->> 'changedAt',
               (SELECT version FROM users WHERE id = ?1), value ->> 'post'
-       FROM json_each(?3) WHERE true
-       ON CONFLICT (user_id, site, list, key) DO UPDATE SET
+       FROM json_each(?2) WHERE true
+       ON CONFLICT (user_id, list, key) DO UPDATE SET
          present = excluded.present, sort_at = excluded.sort_at, changed_at = excluded.changed_at,
          version = excluded.version, post = excluded.post
        WHERE excluded.changed_at >= items.changed_at`,
-    ).bind(userId, site, JSON.stringify(items)),
+    ).bind(userId, JSON.stringify(items)),
   ]);
 }
 
 async function pull(env: Env, userId: number, body: unknown) {
-  const site = siteOf(body);
+  refuseOldApps(body);
   const { since } = body as { since: unknown };
   if (!Number.isSafeInteger(since)) throw new HttpError(400, 'Malformed cursor');
   const { results } = await env.DB.prepare(
     `SELECT list, key, present, sort_at, changed_at, version, post FROM items
-     WHERE user_id = ?1 AND site = ?2 AND version > ?3 ORDER BY version LIMIT ?4`,
+     WHERE user_id = ?1 AND version > ?2 ORDER BY version LIMIT ?3`,
   )
-    .bind(userId, site, since, PULL_LIMIT + 1)
+    .bind(userId, since, PULL_LIMIT + 1)
     .all<ItemRow>();
   const more = results.length > PULL_LIMIT;
   // drop the last version when it might be cut off, the next pull starts from it again
